@@ -2,7 +2,6 @@
 const players = global.players || (global.players = {});
 
 export default function handler(req, res) {
-  // CORS headers
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Roblox-Id');
@@ -24,7 +23,6 @@ export default function handler(req, res) {
     
     const now = Date.now();
     
-    // Update or create player
     if (!players[userId]) {
       players[userId] = {
         username,
@@ -33,16 +31,13 @@ export default function handler(req, res) {
         status: 'online',
         shouldRejoin: false
       };
-      console.log(`New player connected: ${username} (${userId})`);
     }
     
     players[userId].lastSeen = now;
     players[userId].status = 'online';
     
-    // Clean up old players (offline for more than 30 seconds)
     Object.keys(players).forEach(id => {
       if (now - players[id].lastSeen > 30000 && players[id].status === 'online') {
-        console.log(`Removing inactive player: ${players[id].username}`);
         delete players[id];
       }
     });
@@ -52,7 +47,6 @@ export default function handler(req, res) {
       message: 'Heartbeat received'
     });
   } catch (error) {
-    console.error('Heartbeat error:', error);
     return res.status(500).json({ error: 'Internal server error' });
   }
 }
