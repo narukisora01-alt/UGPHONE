@@ -328,26 +328,23 @@
             try {
                 const res = await fetch(`${API}/api/players`);
                 const json = await res.json();
-                data = json.players || {};
+                const newData = json.players || {};
                 
-                // Track start times for new players
-                Object.keys(data).forEach(userId => {
-                    if (!playerStartTimes[userId] && data[userId].status === 'online') {
+                Object.keys(playerStartTimes).forEach(userId => {
+                    if (!newData[userId] || newData[userId].status !== 'online') {
+                        delete playerStartTimes[userId];
+                    }
+                });
+                
+                Object.keys(newData).forEach(userId => {
+                    const player = newData[userId];
+                    
+                    if (player.status === 'online' && !playerStartTimes[userId]) {
                         playerStartTimes[userId] = Date.now();
                     }
-                    // Remove start time if player is disconnected
-                    if (data[userId].status === 'disconnected') {
-                        delete playerStartTimes[userId];
-                    }
                 });
                 
-                // Clean up start times for players no longer in data
-                Object.keys(playerStartTimes).forEach(userId => {
-                    if (!data[userId]) {
-                        delete playerStartTimes[userId];
-                    }
-                });
-                
+                data = newData;
                 render();
             } catch (e) {
                 console.error('Failed to load players:', e);
@@ -444,11 +441,10 @@
             }
         }
 
-        // Update timers every second
         setInterval(() => {
             Object.keys(playerStartTimes).forEach(userId => {
                 const timerEl = document.getElementById(`timer-${userId}`);
-                if (timerEl) {
+                if (timerEl && data[userId] && data[userId].status === 'online') {
                     const elapsed = Math.floor((Date.now() - playerStartTimes[userId]) / 1000);
                     timerEl.textContent = formatTime(elapsed);
                 }
