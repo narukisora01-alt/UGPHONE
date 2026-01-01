@@ -1,5 +1,7 @@
 const players = {};
 const TIMEOUT_MS = 10000;
+let lastCleanup = 0;
+const CLEANUP_INTERVAL = 5000;
 
 export default function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -12,6 +14,20 @@ export default function handler(req, res) {
 
   const path = req.url.split('?')[0];
   const now = Date.now();
+
+  function cleanupPlayers() {
+    if (now - lastCleanup < CLEANUP_INTERVAL) return;
+    
+    lastCleanup = now;
+    Object.keys(players).forEach(id => {
+      const player = players[id];
+      const timeSinceLastSeen = now - player.lastSeen;
+      
+      if (timeSinceLastSeen > TIMEOUT_MS) {
+        delete players[id];
+      }
+    });
+  }
 
   if (path === '/api/heartbeat' && req.method === 'POST') {
     const { username, userId } = req.body;
@@ -36,28 +52,16 @@ export default function handler(req, res) {
     }
     
     players[userId].lastSeen = now;
+    cleanupPlayers();
 
-    Object.keys(players).forEach(id => {
-      const player = players[id];
-      const timeSinceLastSeen = now - player.lastSeen;
-      
-      if (timeSinceLastSeen > TIMEOUT_MS) {
-        delete players[id];
-      }
+    return res.status(200).json({ 
+      success: true,
+      shouldRejoin: players[userId].shouldRejoin 
     });
-
-    return res.status(200).json({ success: true });
   }
 
   if (path === '/api/players' && req.method === 'GET') {
-    Object.keys(players).forEach(id => {
-      const player = players[id];
-      const timeSinceLastSeen = now - player.lastSeen;
-      
-      if (timeSinceLastSeen > TIMEOUT_MS) {
-        delete players[id];
-      }
-    });
+    cleanupPlayers();
 
     return res.status(200).json({ 
       players,
