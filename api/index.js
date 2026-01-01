@@ -20,6 +20,8 @@ export default function handler(req, res) {
     }
 
     const now = Date.now();
+    
+    // Create new player or update existing
     if (!players[userId]) {
       players[userId] = {
         username,
@@ -28,15 +30,21 @@ export default function handler(req, res) {
         status: 'online',
         shouldRejoin: false
       };
+    } else {
+      // If player was disconnected and comes back online, reset timestamp
+      if (players[userId].status === 'disconnected') {
+        players[userId].timestamp = now;
+      }
     }
     
     players[userId].lastSeen = now;
     players[userId].status = 'online';
     players[userId].shouldRejoin = false;
+    players[userId].username = username; // Update username in case it changed
 
-    // Cleanup old players
+    // Cleanup old online players who stopped sending heartbeats
     Object.keys(players).forEach(id => {
-      if (now - players[id].lastSeen > 30000) {
+      if (players[id].status === 'online' && now - players[id].lastSeen > 15000) {
         delete players[id];
       }
     });
@@ -73,15 +81,25 @@ export default function handler(req, res) {
       return res.status(400).json({ error: 'Missing fields' });
     }
 
+    // Keep existing timestamp if player was already tracked
+    const existingTimestamp = players[userId]?.timestamp;
+    
     players[userId] = {
       username,
       userId,
       errorMsg: errorMsg || 'Connection Lost',
-      timestamp: players[userId]?.timestamp || Date.now(),
+      timestamp: existingTimestamp || Date.now(),
       lastSeen: Date.now(),
       status: 'disconnected',
       shouldRejoin: false
     };
+
+    // Auto-delete disconnected players after 5 minutes
+    setTimeout(() => {
+      if (players[userId] && players[userId].status === 'disconnected') {
+        delete players[userId];
+      }
+    }, 300000);
 
     return res.status(200).json({ success: true });
   }
