@@ -23,24 +23,26 @@ export default function handler(req, res) {
     
     // Create new player or update existing
     if (!players[userId]) {
+      // Brand new player - set timestamp
       players[userId] = {
         username,
         userId,
         timestamp: now,
         status: 'online',
-        shouldRejoin: false
+        shouldRejoin: false,
+        lastSeen: now
       };
     } else {
-      // If player was disconnected and comes back online, reset timestamp
+      // Existing player - only reset timestamp if they were disconnected
       if (players[userId].status === 'disconnected') {
         players[userId].timestamp = now;
       }
+      // Just update heartbeat, DON'T change timestamp
+      players[userId].lastSeen = now;
+      players[userId].status = 'online';
+      players[userId].shouldRejoin = false;
+      players[userId].username = username;
     }
-    
-    players[userId].lastSeen = now;
-    players[userId].status = 'online';
-    players[userId].shouldRejoin = false;
-    players[userId].username = username; // Update username in case it changed
 
     // Cleanup old online players who stopped sending heartbeats
     Object.keys(players).forEach(id => {
