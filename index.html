@@ -316,7 +316,7 @@
         function render() {
             const all = Object.entries(data);
             const online = all.filter(([_, p]) => p.status === 'online');
-            const offline = all.filter(([_, p]) => p.status === 'disconnected');
+            const offline = all.filter(([_, p]) => p.status === 'disconnected' && p.errorMsg !== 'Connection Timeout');
 
             document.getElementById('onlineCount').textContent = online.length;
             document.getElementById('offlineCount').textContent = offline.length;
