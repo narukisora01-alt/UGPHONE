@@ -281,10 +281,6 @@
                 <h2 id="totalCount">0</h2>
                 <p>Total</p>
             </div>
-            <div class="stat">
-                <h2 id="rejoinCount">0</h2>
-                <p>Rejoins</p>
-            </div>
         </div>
 
         <div class="section">
@@ -304,14 +300,7 @@
     <script>
         const API = window.location.origin;
         let data = {};
-        let playerStartTimes = {};
         let currentCards = { online: new Set(), offline: new Set() };
-
-        function formatTime(seconds) {
-            const mins = Math.floor(seconds / 60);
-            const secs = seconds % 60;
-            return `${mins}:${secs.toString().padStart(2, '0')}`;
-        }
 
         async function load() {
             try {
@@ -319,23 +308,7 @@
                     cache: 'no-cache'
                 });
                 const json = await res.json();
-                const newData = json.players || {};
-                
-                Object.keys(playerStartTimes).forEach(userId => {
-                    if (!newData[userId] || newData[userId].status !== 'online') {
-                        delete playerStartTimes[userId];
-                    }
-                });
-                
-                Object.keys(newData).forEach(userId => {
-                    const player = newData[userId];
-                    
-                    if (player.status === 'online' && !playerStartTimes[userId]) {
-                        playerStartTimes[userId] = Date.now();
-                    }
-                });
-                
-                data = newData;
+                data = json.players || {};
                 render();
             } catch (e) {}
         }
@@ -348,7 +321,6 @@
             document.getElementById('onlineCount').textContent = online.length;
             document.getElementById('offlineCount').textContent = offline.length;
             document.getElementById('totalCount').textContent = all.length;
-            document.getElementById('rejoinCount').textContent = offline.filter(([_, p]) => p.shouldRejoin).length;
 
             renderGrid('onlineGrid', online, 'online');
             renderGrid('offlineGrid', offline, 'offline');
@@ -377,23 +349,6 @@
             currentCards[type] = newCards;
 
             grid.innerHTML = arr.map(([userId, p]) => {
-                let timeValue = '0:00';
-                
-                if (type === 'online' && playerStartTimes[userId]) {
-                    const elapsed = Math.floor((Date.now() - playerStartTimes[userId]) / 1000);
-                    timeValue = formatTime(elapsed);
-                }
-                
-                let timeSection = '';
-                if (type === 'online') {
-                    timeSection = `
-                        <div class="detail">
-                            <span class="label">Time</span>
-                            <span class="value" id="timer-${userId}">${timeValue}</span>
-                        </div>
-                    `;
-                }
-                
                 return `
                     <div class="card">
                         <div class="card-header">
@@ -417,7 +372,6 @@
                                 <span class="value">${p.errorMsg}</span>
                             </div>
                             ` : ''}
-                            ${timeSection}
                         </div>
                         ${type === 'offline' ? `
                         <button class="btn" onclick="rejoin('${userId}')" ${p.shouldRejoin ? 'disabled' : ''}>
@@ -443,16 +397,6 @@
                 }
             } catch (e) {}
         }
-
-        setInterval(() => {
-            Object.keys(playerStartTimes).forEach(userId => {
-                const timerEl = document.getElementById(`timer-${userId}`);
-                if (timerEl && data[userId] && data[userId].status === 'online') {
-                    const elapsed = Math.floor((Date.now() - playerStartTimes[userId]) / 1000);
-                    timerEl.textContent = formatTime(elapsed);
-                }
-            });
-        }, 1000);
 
         load();
         setInterval(load, 3000);
