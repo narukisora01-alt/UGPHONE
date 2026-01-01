@@ -1,6 +1,5 @@
 const players = {};
 const TIMEOUT_MS = 10000;
-const CLEANUP_INTERVAL_MS = 15000;
 
 export default function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -42,12 +41,7 @@ export default function handler(req, res) {
       const player = players[id];
       const timeSinceLastSeen = now - player.lastSeen;
       
-      if (player.status === 'online' && timeSinceLastSeen > TIMEOUT_MS) {
-        player.status = 'disconnected';
-        player.errorMsg = 'Connection Timeout';
-      }
-      
-      if (player.status === 'disconnected' && timeSinceLastSeen > CLEANUP_INTERVAL_MS) {
+      if (timeSinceLastSeen > TIMEOUT_MS) {
         delete players[id];
       }
     });
@@ -60,12 +54,7 @@ export default function handler(req, res) {
       const player = players[id];
       const timeSinceLastSeen = now - player.lastSeen;
       
-      if (player.status === 'online' && timeSinceLastSeen > TIMEOUT_MS) {
-        player.status = 'disconnected';
-        player.errorMsg = 'Connection Timeout';
-      }
-      
-      if (player.status === 'disconnected' && timeSinceLastSeen > CLEANUP_INTERVAL_MS) {
+      if (timeSinceLastSeen > TIMEOUT_MS) {
         delete players[id];
       }
     });
