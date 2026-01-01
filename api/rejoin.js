@@ -1,30 +1,46 @@
+// api/report.js
 const players = global.players || (global.players = {});
 
 export default function handler(req, res) {
+  // CORS headers
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Roblox-Id');
+  
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
   }
-
+  
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
-
-  const { userId } = req.body;
-
-  if (!userId || !players[userId]) {
-    return res.status(404).json({ error: 'Player not found' });
+  
+  try {
+    const { username, userId, errorMsg } = req.body;
+    
+    if (!username || !userId) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+    
+    // Update player to disconnected
+    players[userId] = {
+      username,
+      userId,
+      errorMsg: errorMsg || 'Connection Lost',
+      timestamp: players[userId]?.timestamp || Date.now(),
+      lastSeen: Date.now(),
+      status: 'disconnected',
+      shouldRejoin: false
+    };
+    
+    console.log(`Player disconnected: ${username} (${userId})`);
+    
+    return res.status(200).json({ 
+      success: true,
+      message: 'Player reported as disconnected'
+    });
+  } catch (error) {
+    console.error('Report error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
   }
-
-  players[userId].shouldRejoin = true;
-
-  console.log(`Rejoin triggered for: ${players[userId].username}`);
-
-  res.status(200).json({ 
-    success: true,
-    player: players[userId]
-  });
 }
