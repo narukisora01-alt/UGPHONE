@@ -3,13 +3,6 @@ const TIMEOUT_MS = 10000
 let lastCleanup = 0
 const CLEANUP_INTERVAL = 2000
 
-// Errors that should be ignored (normal disconnects)
-const IGNORED_ERRORS = [
-	'Disconnect:ClientRequest',
-	'Player removed',
-	'Disconnected'
-]
-
 export default async function handler(req, res) {
 	res.setHeader('Access-Control-Allow-Origin', '*')
 	res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
@@ -40,15 +33,11 @@ export default async function handler(req, res) {
 			const p = players[id]
 			
 			if (p.status === 'online' && now - p.lastSeen > TIMEOUT_MS) {
-				p.status = 'disconnected'
-				p.errorMsg = 'Connection Timeout'
-				p.disconnectedAt = now
+				delete players[id]
 			}
 			
-			if (p.status === 'disconnected' && p.errorMsg === 'Connection Timeout') {
-				if (now - p.disconnectedAt > 5000) {
-					delete players[id]
-				}
+			if (p.status === 'disconnected' && now - p.disconnectedAt > 60000) {
+				delete players[id]
 			}
 		}
 	}
@@ -69,9 +58,7 @@ export default async function handler(req, res) {
 			return res.status(200).json({ success: true })
 		}
 		
-		// If player has a REAL error (not timeout), keep them disconnected
-		if (players[userId].status === 'disconnected' && 
-		    players[userId].errorMsg !== 'Connection Timeout') {
+		if (players[userId].status === 'disconnected' && players[userId].errorMsg) {
 			players[userId].lastSeen = now
 			cleanupPlayers()
 			return res.status(200).json({ 
@@ -81,7 +68,6 @@ export default async function handler(req, res) {
 			})
 		}
 		
-		// Normal case - allow online
 		players[userId].username = username
 		players[userId].status = 'online'
 		players[userId].lastSeen = now
@@ -115,9 +101,7 @@ export default async function handler(req, res) {
 		const { username, userId, errorMsg } = body
 		if (!username || !userId) return res.status(400).json({ error: 'Missing fields' })
 		
-		// Ignore normal disconnect errors
-		if (IGNORED_ERRORS.includes(errorMsg)) {
-			// Just remove them from the list entirely
+		if (!errorMsg || !errorMsg.includes('joined a game from another device')) {
 			delete players[userId]
 			return res.status(200).json({ success: true, ignored: true })
 		}
@@ -126,7 +110,7 @@ export default async function handler(req, res) {
 			username,
 			userId,
 			status: 'disconnected',
-			errorMsg: errorMsg || 'Connection Lost',
+			errorMsg: errorMsg,
 			lastSeen: now,
 			shouldRejoin: false,
 			disconnectedAt: now
