@@ -121,8 +121,6 @@
             border-radius: 8px;
             padding: 25px;
             transition: all 0.3s ease;
-            opacity: 0;
-            animation: slideUp 0.5s forwards;
         }
 
         .card:hover {
@@ -260,17 +258,6 @@
                 opacity: 1;
             }
         }
-
-        @keyframes slideUp {
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
-
-        .card {
-            transform: translateY(20px);
-        }
     </style>
 </head>
 <body>
@@ -384,6 +371,16 @@
                     timeValue = formatTime(elapsed);
                 }
                 
+                let timeSection = '';
+                if (type === 'online') {
+                    timeSection = `
+                        <div class="detail">
+                            <span class="label">Time</span>
+                            <span class="value" id="timer-${userId}">${timeValue}</span>
+                        </div>
+                    `;
+                }
+                
                 return `
                     <div class="card">
                         <div class="card-header">
@@ -407,10 +404,7 @@
                                 <span class="value">${p.errorMsg}</span>
                             </div>
                             ` : ''}
-                            <div class="detail">
-                                <span class="label">Time</span>
-                                <span class="value" id="timer-${userId}">${timeValue}</span>
-                            </div>
+                            ${timeSection}
                         </div>
                         ${type === 'offline' ? `
                         <button class="btn" onclick="rejoin('${userId}')" ${p.shouldRejoin ? 'disabled' : ''}>
