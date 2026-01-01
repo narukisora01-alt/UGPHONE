@@ -23,8 +23,9 @@ export default function handler(req, res) {
       const player = players[id];
       const timeSinceLastSeen = now - player.lastSeen;
       
-      if (timeSinceLastSeen > TIMEOUT_MS) {
-        delete players[id];
+      if (player.status === 'online' && timeSinceLastSeen > TIMEOUT_MS) {
+        player.status = 'disconnected';
+        player.errorMsg = 'Connection Timeout';
       }
     });
   }
@@ -53,7 +54,7 @@ export default function handler(req, res) {
     
     players[userId].lastSeen = now;
     cleanupPlayers();
-
+    
     return res.status(200).json({ 
       success: true,
       shouldRejoin: players[userId].shouldRejoin 
@@ -62,7 +63,6 @@ export default function handler(req, res) {
 
   if (path === '/api/players' && req.method === 'GET') {
     cleanupPlayers();
-
     return res.status(200).json({ 
       players,
       count: Object.keys(players).length
