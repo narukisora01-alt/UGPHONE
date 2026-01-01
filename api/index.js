@@ -26,6 +26,13 @@ export default function handler(req, res) {
       if (player.status === 'online' && timeSinceLastSeen > TIMEOUT_MS) {
         player.status = 'disconnected';
         player.errorMsg = 'Connection Timeout';
+        player.disconnectedAt = now;
+      }
+      
+      if (player.status === 'disconnected' && player.errorMsg === 'Connection Timeout') {
+        if (player.disconnectedAt && now - player.disconnectedAt > 5000) {
+          delete players[id];
+        }
       }
     });
   }
@@ -50,6 +57,7 @@ export default function handler(req, res) {
       players[userId].status = 'online';
       players[userId].shouldRejoin = false;
       delete players[userId].errorMsg;
+      delete players[userId].disconnectedAt;
     }
     
     players[userId].lastSeen = now;
