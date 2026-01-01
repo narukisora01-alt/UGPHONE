@@ -305,7 +305,11 @@
         async function load() {
             try {
                 const res = await fetch(`${API}/api/players`, {
-                    cache: 'no-cache'
+                    cache: 'no-cache',
+                    headers: {
+                        'Cache-Control': 'no-cache',
+                        'Pragma': 'no-cache'
+                    }
                 });
                 const json = await res.json();
                 data = json.players || {};
@@ -344,7 +348,20 @@
             const hasChanged = currentCards[type].size !== newCards.size || 
                               ![...newCards].every(id => currentCards[type].has(id));
             
-            if (!hasChanged) return;
+            if (!hasChanged) {
+                arr.forEach(([userId, p]) => {
+                    const statusEl = document.querySelector(`#status-${userId}`);
+                    if (statusEl) {
+                        statusEl.textContent = p.shouldRejoin ? 'Rejoin sent' : type;
+                    }
+                    const btnEl = document.querySelector(`#btn-${userId}`);
+                    if (btnEl && type === 'offline') {
+                        btnEl.disabled = p.shouldRejoin;
+                        btnEl.textContent = p.shouldRejoin ? 'Rejoin sent' : 'Rejoin';
+                    }
+                });
+                return;
+            }
             
             currentCards[type] = newCards;
 
@@ -358,7 +375,7 @@
                             </div>
                             <div class="card-info">
                                 <h3>${p.username}</h3>
-                                <div class="status">${p.shouldRejoin ? 'Rejoin sent' : type}</div>
+                                <div class="status" id="status-${userId}">${p.shouldRejoin ? 'Rejoin sent' : type}</div>
                             </div>
                         </div>
                         <div class="details">
@@ -374,7 +391,7 @@
                             ` : ''}
                         </div>
                         ${type === 'offline' ? `
-                        <button class="btn" onclick="rejoin('${userId}')" ${p.shouldRejoin ? 'disabled' : ''}>
+                        <button class="btn" id="btn-${userId}" onclick="rejoin('${userId}')" ${p.shouldRejoin ? 'disabled' : ''}>
                             ${p.shouldRejoin ? 'Rejoin sent' : 'Rejoin'}
                         </button>
                         ` : ''}
@@ -399,7 +416,7 @@
         }
 
         load();
-        setInterval(load, 3000);
+        setInterval(load, 2000);
     </script>
 </body>
 </html>
