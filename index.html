@@ -346,9 +346,7 @@
                 
                 data = newData;
                 render();
-            } catch (e) {
-                console.error('Failed to load players:', e);
-            }
+            } catch (e) {}
         }
 
         function render() {
@@ -436,9 +434,7 @@
                     data[userId].shouldRejoin = true;
                     render();
                 }
-            } catch (e) {
-                console.error('Rejoin failed:', e);
-            }
+            } catch (e) {}
         }
 
         setInterval(() => {
