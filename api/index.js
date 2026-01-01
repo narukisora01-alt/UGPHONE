@@ -1,12 +1,13 @@
 const players = {};
 const TIMEOUT_MS = 10000;
 let lastCleanup = 0;
-const CLEANUP_INTERVAL = 5000;
+const CLEANUP_INTERVAL = 2000;
 
 export default function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
   
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
@@ -73,7 +74,8 @@ export default function handler(req, res) {
     cleanupPlayers();
     return res.status(200).json({ 
       players,
-      count: Object.keys(players).length
+      count: Object.keys(players).length,
+      timestamp: now
     });
   }
 
