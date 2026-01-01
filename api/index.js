@@ -1,5 +1,6 @@
-// api/index.js - ONE FILE FOR ALL ENDPOINTS
 const players = {};
+const TIMEOUT_MS = 10000;
+const CLEANUP_INTERVAL_MS = 15000;
 
 export default function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -11,42 +12,42 @@ export default function handler(req, res) {
   }
 
   const path = req.url.split('?')[0];
+  const now = Date.now();
 
-  // HEARTBEAT
   if (path === '/api/heartbeat' && req.method === 'POST') {
     const { username, userId } = req.body;
+    
     if (!username || !userId) {
       return res.status(400).json({ error: 'Missing fields' });
     }
 
-    const now = Date.now();
-    
-    // Create new player or update existing
     if (!players[userId]) {
-      // Brand new player - set timestamp
       players[userId] = {
         username,
         userId,
         timestamp: now,
         status: 'online',
-        shouldRejoin: false,
-        lastSeen: now
+        shouldRejoin: false
       };
     } else {
-      // Existing player - only reset timestamp if they were disconnected
-      if (players[userId].status === 'disconnected') {
-        players[userId].timestamp = now;
-      }
-      // Just update heartbeat, DON'T change timestamp
-      players[userId].lastSeen = now;
+      players[userId].username = username;
       players[userId].status = 'online';
       players[userId].shouldRejoin = false;
-      players[userId].username = username;
+      delete players[userId].errorMsg;
     }
+    
+    players[userId].lastSeen = now;
 
-    // Cleanup old online players who stopped sending heartbeats
     Object.keys(players).forEach(id => {
-      if (players[id].status === 'online' && now - players[id].lastSeen > 15000) {
+      const player = players[id];
+      const timeSinceLastSeen = now - player.lastSeen;
+      
+      if (player.status === 'online' && timeSinceLastSeen > TIMEOUT_MS) {
+        player.status = 'disconnected';
+        player.errorMsg = 'Connection Timeout';
+      }
+      
+      if (player.status === 'disconnected' && timeSinceLastSeen > CLEANUP_INTERVAL_MS) {
         delete players[id];
       }
     });
@@ -54,54 +55,65 @@ export default function handler(req, res) {
     return res.status(200).json({ success: true });
   }
 
-  // GET PLAYERS
   if (path === '/api/players' && req.method === 'GET') {
+    Object.keys(players).forEach(id => {
+      const player = players[id];
+      const timeSinceLastSeen = now - player.lastSeen;
+      
+      if (player.status === 'online' && timeSinceLastSeen > TIMEOUT_MS) {
+        player.status = 'disconnected';
+        player.errorMsg = 'Connection Timeout';
+      }
+      
+      if (player.status === 'disconnected' && timeSinceLastSeen > CLEANUP_INTERVAL_MS) {
+        delete players[id];
+      }
+    });
+
     return res.status(200).json({ 
       players,
       count: Object.keys(players).length
     });
   }
 
-  // REJOIN
   if (path === '/api/rejoin' && req.method === 'POST') {
     const { userId } = req.body;
+    
     if (!userId) {
       return res.status(400).json({ error: 'Missing userId' });
     }
+    
     if (!players[userId]) {
       return res.status(404).json({ error: 'Player not found' });
     }
-
+    
     players[userId].shouldRejoin = true;
+    
     return res.status(200).json({ success: true });
   }
 
-  // REPORT DISCONNECT
   if (path === '/api/report' && req.method === 'POST') {
     const { username, userId, errorMsg } = req.body;
+    
     if (!username || !userId) {
       return res.status(400).json({ error: 'Missing fields' });
     }
 
-    // Keep existing timestamp if player was already tracked
-    const existingTimestamp = players[userId]?.timestamp;
-    
-    players[userId] = {
-      username,
-      userId,
-      errorMsg: errorMsg || 'Connection Lost',
-      timestamp: existingTimestamp || Date.now(),
-      lastSeen: Date.now(),
-      status: 'disconnected',
-      shouldRejoin: false
-    };
-
-    // Auto-delete disconnected players after 5 minutes
-    setTimeout(() => {
-      if (players[userId] && players[userId].status === 'disconnected') {
-        delete players[userId];
-      }
-    }, 300000);
+    if (!players[userId]) {
+      players[userId] = {
+        username,
+        userId,
+        timestamp: now,
+        lastSeen: now,
+        status: 'disconnected',
+        errorMsg: errorMsg || 'Connection Lost',
+        shouldRejoin: false
+      };
+    } else {
+      players[userId].status = 'disconnected';
+      players[userId].errorMsg = errorMsg || 'Connection Lost';
+      players[userId].lastSeen = now;
+    }
 
     return res.status(200).json({ success: true });
   }
