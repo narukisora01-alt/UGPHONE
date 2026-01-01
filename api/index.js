@@ -3,6 +3,13 @@ const TIMEOUT_MS = 10000
 let lastCleanup = 0
 const CLEANUP_INTERVAL = 2000
 
+// Errors that should be ignored (normal disconnects)
+const IGNORED_ERRORS = [
+	'Disconnect:ClientRequest',
+	'Player removed',
+	'Disconnected'
+]
+
 export default async function handler(req, res) {
 	res.setHeader('Access-Control-Allow-Origin', '*')
 	res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
@@ -67,7 +74,6 @@ export default async function handler(req, res) {
 		    players[userId].errorMsg !== 'Connection Timeout') {
 			players[userId].lastSeen = now
 			cleanupPlayers()
-			// Tell the client to stop sending heartbeats
 			return res.status(200).json({ 
 				success: false, 
 				blocked: true,
@@ -99,7 +105,6 @@ export default async function handler(req, res) {
 		}
 		
 		players[userId].shouldRejoin = true
-		// Clear the block so they can rejoin
 		delete players[userId].errorMsg
 		delete players[userId].disconnectedAt
 		
@@ -109,6 +114,13 @@ export default async function handler(req, res) {
 	if (path === '/api/report' && req.method === 'POST') {
 		const { username, userId, errorMsg } = body
 		if (!username || !userId) return res.status(400).json({ error: 'Missing fields' })
+		
+		// Ignore normal disconnect errors
+		if (IGNORED_ERRORS.includes(errorMsg)) {
+			// Just remove them from the list entirely
+			delete players[userId]
+			return res.status(200).json({ success: true, ignored: true })
+		}
 		
 		players[userId] = {
 			username,
