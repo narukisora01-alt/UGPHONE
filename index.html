@@ -113,6 +113,7 @@
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
             gap: 20px;
+            min-height: 100px;
         }
 
         .card {
@@ -304,6 +305,7 @@
         const API = window.location.origin;
         let data = {};
         let playerStartTimes = {};
+        let currentCards = { online: new Set(), offline: new Set() };
 
         function formatTime(seconds) {
             const mins = Math.floor(seconds / 60);
@@ -313,7 +315,9 @@
 
         async function load() {
             try {
-                const res = await fetch(`${API}/api/players`);
+                const res = await fetch(`${API}/api/players`, {
+                    cache: 'no-cache'
+                });
                 const json = await res.json();
                 const newData = json.players || {};
                 
@@ -352,6 +356,7 @@
 
         function renderGrid(id, arr, type) {
             const grid = document.getElementById(id);
+            const newCards = new Set(arr.map(([userId]) => userId));
             
             if (arr.length === 0) {
                 grid.innerHTML = `
@@ -360,8 +365,16 @@
                         <p>${type === 'online' ? 'Waiting for connections' : 'No disconnections'}</p>
                     </div>
                 `;
+                currentCards[type].clear();
                 return;
             }
+
+            const hasChanged = currentCards[type].size !== newCards.size || 
+                              ![...newCards].every(id => currentCards[type].has(id));
+            
+            if (!hasChanged) return;
+            
+            currentCards[type] = newCards;
 
             grid.innerHTML = arr.map(([userId, p]) => {
                 let timeValue = '0:00';
@@ -442,7 +455,7 @@
         }, 1000);
 
         load();
-        setInterval(load, 2000);
+        setInterval(load, 3000);
     </script>
 </body>
 </html>
