@@ -1,125 +1,102 @@
-const players = {};
-const TIMEOUT_MS = 10000;
-let lastCleanup = 0;
-const CLEANUP_INTERVAL = 2000;
+const players = {}
+const TIMEOUT_MS = 10000
+let lastCleanup = 0
+const CLEANUP_INTERVAL = 2000
 
-export default function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
-  
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end();
-  }
+export default async function handler(req, res) {
+	res.setHeader('Access-Control-Allow-Origin', '*')
+	res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+	res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
+	res.setHeader('Cache-Control', 'no-store')
 
-  const path = req.url.split('?')[0];
-  const now = Date.now();
+	if (req.method === 'OPTIONS') {
+		return res.status(200).end()
+	}
 
-  function cleanupPlayers() {
-    if (now - lastCleanup < CLEANUP_INTERVAL) return;
-    
-    lastCleanup = now;
-    Object.keys(players).forEach(id => {
-      const player = players[id];
-      const timeSinceLastSeen = now - player.lastSeen;
-      
-      if (player.status === 'online' && timeSinceLastSeen > TIMEOUT_MS) {
-        player.status = 'disconnected';
-        player.errorMsg = 'Connection Timeout';
-        player.disconnectedAt = now;
-      }
-      
-      if (player.status === 'disconnected' && player.errorMsg === 'Connection Timeout') {
-        if (player.disconnectedAt && now - player.disconnectedAt > 5000) {
-          delete players[id];
-        }
-      }
-    });
-  }
+	const path = req.url.split('?')[0]
+	const now = Date.now()
 
-  if (path === '/api/heartbeat' && req.method === 'POST') {
-    const { username, userId } = req.body;
-    
-    if (!username || !userId) {
-      return res.status(400).json({ error: 'Missing fields' });
-    }
+	let body = {}
+	if (req.method === 'POST') {
+		try {
+			body = typeof req.body === 'object' ? req.body : JSON.parse(req.body || '{}')
+		} catch {
+			body = {}
+		}
+	}
 
-    if (!players[userId]) {
-      players[userId] = {
-        username,
-        userId,
-        timestamp: now,
-        status: 'online',
-        shouldRejoin: false
-      };
-    } else {
-      players[userId].username = username;
-      players[userId].status = 'online';
-      players[userId].shouldRejoin = false;
-      delete players[userId].errorMsg;
-      delete players[userId].disconnectedAt;
-    }
-    
-    players[userId].lastSeen = now;
-    cleanupPlayers();
-    
-    return res.status(200).json({ 
-      success: true,
-      shouldRejoin: players[userId].shouldRejoin 
-    });
-  }
+	function cleanupPlayers() {
+		if (now - lastCleanup < CLEANUP_INTERVAL) return
+		lastCleanup = now
 
-  if (path === '/api/players' && req.method === 'GET') {
-    cleanupPlayers();
-    return res.status(200).json({ 
-      players,
-      count: Object.keys(players).length,
-      timestamp: now
-    });
-  }
+		for (const id in players) {
+			const p = players[id]
+			if (p.status === 'online' && now - p.lastSeen > TIMEOUT_MS) {
+				p.status = 'disconnected'
+				p.errorMsg = 'Connection Timeout'
+				p.disconnectedAt = now
+			}
+			if (p.status === 'disconnected' && p.errorMsg === 'Connection Timeout') {
+				if (now - p.disconnectedAt > 5000) {
+					delete players[id]
+				}
+			}
+		}
+	}
 
-  if (path === '/api/rejoin' && req.method === 'POST') {
-    const { userId } = req.body;
-    
-    if (!userId) {
-      return res.status(400).json({ error: 'Missing userId' });
-    }
-    
-    if (!players[userId]) {
-      return res.status(404).json({ error: 'Player not found' });
-    }
-    
-    players[userId].shouldRejoin = true;
-    
-    return res.status(200).json({ success: true });
-  }
+	if (path === '/api/heartbeat' && req.method === 'POST') {
+		const { username, userId } = body
+		if (!username || !userId) return res.status(400).json({ error: 'Missing fields' })
 
-  if (path === '/api/report' && req.method === 'POST') {
-    const { username, userId, errorMsg } = req.body;
-    
-    if (!username || !userId) {
-      return res.status(400).json({ error: 'Missing fields' });
-    }
+		if (!players[userId]) {
+			players[userId] = {
+				username,
+				userId,
+				status: 'online',
+				shouldRejoin: false
+			}
+		}
 
-    if (!players[userId]) {
-      players[userId] = {
-        username,
-        userId,
-        timestamp: now,
-        lastSeen: now,
-        status: 'disconnected',
-        errorMsg: errorMsg || 'Connection Lost',
-        shouldRejoin: false
-      };
-    } else {
-      players[userId].status = 'disconnected';
-      players[userId].errorMsg = errorMsg || 'Connection Lost';
-      players[userId].lastSeen = now;
-    }
+		players[userId].username = username
+		players[userId].status = 'online'
+		players[userId].lastSeen = now
+		players[userId].shouldRejoin = false
+		delete players[userId].errorMsg
+		delete players[userId].disconnectedAt
 
-    return res.status(200).json({ success: true });
-  }
+		cleanupPlayers()
+		return res.status(200).json({ success: true })
+	}
 
-  return res.status(404).json({ error: 'Not found' });
+	if (path === '/api/players' && req.method === 'GET') {
+		cleanupPlayers()
+		return res.status(200).json({ players })
+	}
+
+	if (path === '/api/rejoin' && req.method === 'POST') {
+		const { userId } = body
+		if (!userId || !players[userId]) {
+			return res.status(404).json({ error: 'Player not found' })
+		}
+		players[userId].shouldRejoin = true
+		return res.status(200).json({ success: true })
+	}
+
+	if (path === '/api/report' && req.method === 'POST') {
+		const { username, userId, errorMsg } = body
+		if (!username || !userId) return res.status(400).json({ error: 'Missing fields' })
+
+		players[userId] = {
+			username,
+			userId,
+			status: 'disconnected',
+			errorMsg: errorMsg || 'Connection Lost',
+			lastSeen: now,
+			shouldRejoin: false
+		}
+
+		return res.status(200).json({ success: true })
+	}
+
+	return res.status(404).json({ error: 'Not found' })
 }
