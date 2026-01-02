@@ -6,11 +6,12 @@ const supabase = createClient(
 )
 
 const TIMEOUT_MS = 10000
+const AUTH_KEY = process.env.AUTH_KEY
 
 export default async function handler(req, res) {
 	res.setHeader('Access-Control-Allow-Origin', '*')
 	res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
-	res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
+	res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization')
 	res.setHeader('Cache-Control', 'no-store')
 	
 	if (req.method === 'OPTIONS') {
@@ -100,7 +101,6 @@ export default async function handler(req, res) {
 				status: 'online',
 				last_seen: now,
 				last_time_update: now,
-				should_rejoin: false,
 				time_remaining: newTime
 			}
 			
@@ -147,6 +147,14 @@ export default async function handler(req, res) {
 		}
 		
 		return res.status(200).json({ players: playersObj })
+	}
+	
+	if (path === '/api/auth' && req.method === 'POST') {
+		const { key } = body
+		if (key === AUTH_KEY) {
+			return res.status(200).json({ success: true })
+		}
+		return res.status(401).json({ error: 'Invalid key' })
 	}
 	
 	if (path === '/api/rejoin' && req.method === 'POST') {
