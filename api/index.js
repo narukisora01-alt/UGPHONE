@@ -29,8 +29,9 @@ export default async function handler(req, res) {
 	}
 
 	async function calculateCurrentTime(player) {
-		if (player.time_remaining <= 0) return 0
-		const elapsed = (now - player.last_time_update) / 1000
+		if (!player || player.time_remaining <= 0) return 0
+		const last = player.last_time_update || now
+		const elapsed = (now - last) / 1000
 		return Math.max(0, player.time_remaining - elapsed)
 	}
 
@@ -40,18 +41,21 @@ export default async function handler(req, res) {
 
 		for (const p of players) {
 			const updates = {}
-			const timeSinceLastSeen = now - p.last_seen
+			const lastSeen = p.last_seen || 0
 
-			if (p.status === 'online' && timeSinceLastSeen > TIMEOUT_MS && !p.should_rejoin) {
+			if (
+				p.status === 'online' &&
+				now - lastSeen > TIMEOUT_MS &&
+				!p.should_rejoin
+			) {
 				updates.status = 'disconnected'
 				updates.error_msg = 'Connection Timeout'
 				updates.disconnected_at = now
 			}
 
 			if (p.status === 'disconnected' && !p.should_rejoin) {
-				const timeSinceDisconnect = now - (p.disconnected_at || p.last_seen)
-				const CLEANUP_THRESHOLD = 24 * 60 * 60 * 1000
-				if (timeSinceDisconnect > CLEANUP_THRESHOLD) {
+				const since = now - (p.disconnected_at || lastSeen)
+				if (since > 86400000) {
 					await supabase.from('players').delete().eq('user_id', p.user_id)
 					continue
 				}
@@ -63,11 +67,13 @@ export default async function handler(req, res) {
 				updates.last_time_update = now
 			}
 
-			if (Object.keys(updates).length > 0) {
+			if (Object.keys(updates).length) {
 				await supabase.from('players').update(updates).eq('user_id', p.user_id)
 			}
 		}
 	}
+
+	/* ================= HEARTBEAT ================= */
 
 	if (path === '/api/heartbeat' && req.method === 'POST') {
 		const { username, userId } = body
@@ -77,7 +83,7 @@ export default async function handler(req, res) {
 			.from('players')
 			.select('*')
 			.eq('user_id', userId)
-			.single()
+			.maybeSingle()
 
 		if (!existing) {
 			await supabase.from('players').insert({
@@ -91,14 +97,7 @@ export default async function handler(req, res) {
 				last_time_update: now,
 				first_seen: now
 			})
-			return res.status(200).json({ success: true, shouldRejoin: false })
-		}
-
-		if (existing.should_rejoin) {
-			return res.status(200).json({
-				success: true,
-				shouldRejoin: true
-			})
+			return res.json({ success: true, shouldRejoin: false })
 		}
 
 		const newTime = await calculateCurrentTime(existing)
@@ -113,11 +112,13 @@ export default async function handler(req, res) {
 			disconnected_at: null
 		}).eq('user_id', userId)
 
-		return res.status(200).json({
+		return res.json({
 			success: true,
-			shouldRejoin: false
+			shouldRejoin: existing.should_rejoin
 		})
 	}
+
+	/* ================= PLAYERS ================= */
 
 	if (path === '/api/players' && req.method === 'GET') {
 		await cleanupPlayers()
@@ -127,54 +128,46 @@ export default async function handler(req, res) {
 			.select('*')
 			.order('first_seen', { ascending: false })
 
-		const playersObj = {}
-		if (players) {
-			for (const p of players) {
-				playersObj[p.user_id] = {
-					username: p.username,
-					userId: p.user_id,
-					status: p.status,
-					shouldRejoin: p.should_rejoin || false,
-					timeRemaining: await calculateCurrentTime(p),
-					selectedScript: p.selected_script,
-					lastSeen: p.last_seen,
-					lastTimeUpdate: p.last_time_update,
-					firstSeen: p.first_seen,
-					errorMsg: p.error_msg,
-					disconnectedAt: p.disconnected_at
-				}
+		const out = {}
+		for (const p of players || []) {
+			out[p.user_id] = {
+				username: p.username,
+				userId: p.user_id,
+				status: p.status,
+				shouldRejoin: !!p.should_rejoin,
+				timeRemaining: await calculateCurrentTime(p),
+				selectedScript: p.selected_script,
+				lastSeen: p.last_seen,
+				lastTimeUpdate: p.last_time_update,
+				firstSeen: p.first_seen,
+				errorMsg: p.error_msg,
+				disconnectedAt: p.disconnected_at
 			}
 		}
 
-		return res.status(200).json({ players: playersObj })
+		return res.json({ players: out })
 	}
 
+	/* ================= AUTH ================= */
+
 	if (path === '/api/auth' && req.method === 'POST') {
-		const { key } = body
-		if (key === AUTH_KEY) return res.status(200).json({ success: true })
-		return res.status(401).json({ error: 'Invalid key' })
+		return body.key === AUTH_KEY
+			? res.json({ success: true })
+			: res.status(401).json({ error: 'Invalid key' })
 	}
+
+	/* ================= REJOIN ================= */
 
 	if (path === '/api/rejoin' && req.method === 'POST') {
 		const { userId } = body
 		if (!userId) return res.status(400).json({ error: 'Missing userId' })
-
-		const { data: player } = await supabase
-			.from('players')
-			.select('status')
-			.eq('user_id', userId)
-			.single()
-
-		if (!player) {
-			return res.status(404).json({ error: 'Player not found' })
-		}
 
 		await supabase.from('players').update({
 			should_rejoin: true,
 			last_seen: now
 		}).eq('user_id', userId)
 
-		return res.status(200).json({ success: true })
+		return res.json({ success: true })
 	}
 
 	if (path === '/api/rejoin-complete' && req.method === 'POST') {
@@ -189,8 +182,10 @@ export default async function handler(req, res) {
 			last_seen: now
 		}).eq('user_id', userId)
 
-		return res.status(200).json({ success: true })
+		return res.json({ success: true })
 	}
+
+	/* ================= REPORT ================= */
 
 	if (path === '/api/report' && req.method === 'POST') {
 		const { username, userId, errorMsg } = body
@@ -200,25 +195,19 @@ export default async function handler(req, res) {
 			.from('players')
 			.select('*')
 			.eq('user_id', userId)
-			.single()
+			.maybeSingle()
 
 		const currentTime = existing ? await calculateCurrentTime(existing) : 0
 
 		if (existing) {
-			const updates = {
+			await supabase.from('players').update({
 				status: 'disconnected',
 				error_msg: errorMsg,
 				disconnected_at: now,
 				last_seen: now,
 				time_remaining: currentTime,
 				last_time_update: now
-			}
-
-			if (!existing.should_rejoin) {
-				updates.should_rejoin = false
-			}
-
-			await supabase.from('players').update(updates).eq('user_id', userId)
+			}).eq('user_id', userId)
 		} else {
 			await supabase.from('players').insert({
 				user_id: userId,
@@ -235,62 +224,65 @@ export default async function handler(req, res) {
 			})
 		}
 
-		return res.status(200).json({ success: true })
+		return res.json({ success: true })
 	}
+
+	/* ================= UPDATE TIME ================= */
 
 	if (path === '/api/update-time' && req.method === 'POST') {
 		const { userId, timeToAdd } = body
-		if (!userId || timeToAdd === undefined) return res.status(400).json({ error: 'Missing fields' })
+		if (!userId || typeof timeToAdd !== 'number')
+			return res.status(400).json({ error: 'Missing fields' })
 
 		const { data: player } = await supabase
 			.from('players')
-			.select('time_remaining, last_time_update')
+			.select('*')
 			.eq('user_id', userId)
-			.single()
+			.maybeSingle()
 
 		if (!player) return res.status(404).json({ error: 'Player not found' })
 
-		const currentTime = await calculateCurrentTime(player)
-		const newTime = currentTime + timeToAdd
+		const current = await calculateCurrentTime(player)
+		const newTime = Math.max(0, current + timeToAdd)
 
 		await supabase.from('players').update({
 			time_remaining: newTime,
 			last_time_update: now
 		}).eq('user_id', userId)
 
-		return res.status(200).json({ success: true, timeRemaining: newTime })
+		return res.json({ success: true, timeRemaining: newTime })
 	}
+
+	/* ================= UPDATE SCRIPT ================= */
 
 	if (path === '/api/update-script' && req.method === 'POST') {
 		const { userId, script } = body
 		if (!userId || !script) return res.status(400).json({ error: 'Missing fields' })
 
-		const { error } = await supabase
-			.from('players')
+		await supabase.from('players')
 			.update({ selected_script: script })
 			.eq('user_id', userId)
 
-		if (error) return res.status(404).json({ error: 'Player not found' })
-		return res.status(200).json({ success: true })
+		return res.json({ success: true })
 	}
 
+	/* ================= SCRIPT ================= */
+
 	if (path === '/api/script' && req.method === 'GET') {
-		const { data: scriptData } = await supabase
+		const { data } = await supabase
 			.from('scripts')
 			.select('content')
 			.eq('name', 'main')
-			.single()
+			.maybeSingle()
 
-		if (!scriptData || !scriptData.content) return res.status(404).send('')
+		if (!data?.content) return res.status(404).send('')
 
 		const serverUrl = req.headers.host
 			? 'https://' + req.headers.host
 			: 'https://cloudsync-rho.vercel.app'
 
-		const luaScript = scriptData.content.replace('{{SERVER_URL}}', serverUrl)
-
 		res.setHeader('Content-Type', 'text/plain')
-		return res.status(200).send(luaScript)
+		return res.send(data.content.replace('{{SERVER_URL}}', serverUrl))
 	}
 
 	return res.status(404).json({ error: 'Not found' })
