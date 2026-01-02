@@ -185,13 +185,17 @@ export default async function handler(req, res) {
 			.eq('user_id', userId)
 			.single()
 
+		const currentTime = existing ? await calculateCurrentTime(existing) : 0
+
 		if (existing) {
 			await supabase.from('players').update({
 				status: 'disconnected',
 				error_msg: errorMsg,
 				disconnected_at: now,
 				last_seen: now,
-				should_rejoin: false
+				should_rejoin: false,
+				time_remaining: currentTime,
+				last_time_update: now
 			}).eq('user_id', userId)
 		} else {
 			await supabase.from('players').insert({
