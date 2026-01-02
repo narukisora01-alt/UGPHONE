@@ -94,24 +94,11 @@ export default async function handler(req, res) {
 			return res.status(200).json({ success: true, shouldRejoin: false })
 		}
 
-		if (existing.status === 'disconnected') {
-			if (existing.should_rejoin) {
-				await supabase.from('players').update({ last_seen: now }).eq('user_id', userId)
-				return res.status(200).json({
-					success: true,
-					shouldRejoin: true,
-					stayDisconnected: true
-				})
-			}
-			
-			if (existing.error_msg && existing.error_msg.includes('joined a game from another device')) {
-				await supabase.from('players').update({ last_seen: now }).eq('user_id', userId)
-				return res.status(403).json({
-					success: false,
-					blocked: true,
-					shouldRejoin: false
-				})
-			}
+		if (existing.should_rejoin) {
+			return res.status(200).json({
+				success: true,
+				shouldRejoin: true
+			})
 		}
 
 		const newTime = await calculateCurrentTime(existing)
