@@ -274,18 +274,33 @@
             } catch (e) {}
         }
 
-        async function rejoin(userId) {
-            pauseRefresh();
-            try {
-                const res = await fetch(`${API}/api/rejoin`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ userId })
-                });
-                const json = await res.json();
-                if (json.success) await load();
-            } catch (e) {}
+async function rejoin(userId) {
+    // 1. Disable the button immediately so the user knows it's working
+    const btn = event.target;
+    const originalText = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Processing...';
+    
+    // 2. Stop the auto-refresh from overwriting our UI
+    isUpdating = true; 
+
+    try {
+        const res = await fetch(`${API}/api/rejoin`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId })
+        });
+        const json = await res.json();
+        if (json.success) {
+            await load(); // Fetch fresh data
         }
+    } catch (e) {
+        console.error("Rejoin failed:", e);
+    } finally {
+        // 3. Re-enable updates
+        isUpdating = false;
+    }
+}
     </script>
 </body>
 </html>
