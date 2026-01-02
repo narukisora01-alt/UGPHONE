@@ -433,7 +433,7 @@
                 return;
             }
 
-            grid.innerHTML = arr.map(([userId, p]) => {
+            grid.innerHTML = arr.sort((a, b) => b[1].firstSeen - a[1].firstSeen).map(([userId, p]) => {
                 const timeRemaining = p.timeRemaining || 0;
                 const hasTime = timeRemaining > 0;
                 const timeClass = hasTime ? 'active' : 'expired';
