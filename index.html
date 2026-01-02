@@ -488,6 +488,8 @@
         const AUTH_KEY = 'Brandon09364168683!';
         let data = {};
         let isAuthenticated = false;
+        let refreshInterval = null;
+        let isUpdating = false;
 
         function authenticate() {
             const input = document.getElementById('authInput');
@@ -500,7 +502,7 @@
                 document.getElementById('mainContent').style.display = 'block';
                 document.getElementById('logoutBtn').style.display = 'block';
                 load();
-                setInterval(load, 2000);
+                startAutoRefresh();
             } else {
                 error.classList.add('show');
                 input.value = '';
@@ -511,10 +513,34 @@
         function logout() {
             isAuthenticated = false;
             sessionStorage.removeItem('auth');
+            stopAutoRefresh();
             document.getElementById('authOverlay').style.display = 'flex';
             document.getElementById('mainContent').style.display = 'none';
             document.getElementById('logoutBtn').style.display = 'none';
             document.getElementById('authInput').value = '';
+        }
+
+        function startAutoRefresh() {
+            stopAutoRefresh();
+            refreshInterval = setInterval(() => {
+                if (!isUpdating) {
+                    load();
+                }
+            }, 2000);
+        }
+
+        function stopAutoRefresh() {
+            if (refreshInterval) {
+                clearInterval(refreshInterval);
+                refreshInterval = null;
+            }
+        }
+
+        function pauseRefresh(duration = 5000) {
+            isUpdating = true;
+            setTimeout(() => {
+                isUpdating = false;
+            }, duration);
         }
 
         document.getElementById('authInput').addEventListener('keypress', (e) => {
@@ -527,7 +553,7 @@
             document.getElementById('mainContent').style.display = 'block';
             document.getElementById('logoutBtn').style.display = 'block';
             load();
-            setInterval(load, 2000);
+            startAutoRefresh();
         }
 
         function formatTime(seconds) {
@@ -691,6 +717,8 @@
         }
 
         async function addTime(userId) {
+            pauseRefresh();
+            
             const input = document.getElementById(`time-${userId}`);
             const unitSelect = document.getElementById(`unit-${userId}`);
             const amount = parseInt(input.value) || 0;
@@ -729,6 +757,8 @@
         }
 
         async function updateScript(userId) {
+            pauseRefresh();
+            
             const select = document.getElementById(`script-${userId}`);
             const script = select.value;
             
@@ -748,6 +778,8 @@
         }
 
         async function rejoin(userId) {
+            pauseRefresh();
+            
             try {
                 const res = await fetch(`${API}/api/rejoin`, {
                     method: 'POST',
