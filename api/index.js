@@ -33,11 +33,18 @@ export default async function handler(req, res) {
 			const p = players[id]
 			
 			if (p.status === 'online' && now - p.lastSeen > TIMEOUT_MS) {
+				p.status = 'disconnected'
+				p.errorMsg = 'Connection Timeout'
+				p.disconnectedAt = now
+			}
+			
+			if (p.status === 'disconnected' && p.errorMsg === 'Connection Timeout' && now - p.disconnectedAt > 60000) {
 				delete players[id]
 			}
 			
-			if (p.status === 'disconnected' && now - p.disconnectedAt > 60000) {
-				delete players[id]
+			if (p.timeRemaining !== undefined && p.timeRemaining > 0 && p.status === 'online') {
+				const elapsed = (now - p.lastSeen) / 1000
+				p.timeRemaining = Math.max(0, p.timeRemaining - elapsed)
 			}
 		}
 	}
@@ -51,29 +58,22 @@ export default async function handler(req, res) {
 				username,
 				userId,
 				status: 'online',
-				shouldRejoin: false
+				shouldRejoin: false,
+				timeRemaining: 0,
+				selectedScript: 'none',
+				lastSeen: now
 			}
+		} else {
+			players[userId].username = username
+			players[userId].status = 'online'
 			players[userId].lastSeen = now
-			cleanupPlayers()
-			return res.status(200).json({ success: true })
+			players[userId].shouldRejoin = false
+			
+			if (players[userId].errorMsg === 'Connection Timeout') {
+				delete players[userId].errorMsg
+				delete players[userId].disconnectedAt
+			}
 		}
-		
-		if (players[userId].status === 'disconnected' && players[userId].errorMsg) {
-			players[userId].lastSeen = now
-			cleanupPlayers()
-			return res.status(200).json({ 
-				success: false, 
-				blocked: true,
-				error: players[userId].errorMsg 
-			})
-		}
-		
-		players[userId].username = username
-		players[userId].status = 'online'
-		players[userId].lastSeen = now
-		players[userId].shouldRejoin = false
-		delete players[userId].errorMsg
-		delete players[userId].disconnectedAt
 		
 		cleanupPlayers()
 		return res.status(200).json({ success: true })
@@ -91,8 +91,6 @@ export default async function handler(req, res) {
 		}
 		
 		players[userId].shouldRejoin = true
-		delete players[userId].errorMsg
-		delete players[userId].disconnectedAt
 		
 		return res.status(200).json({ success: true })
 	}
@@ -101,20 +99,53 @@ export default async function handler(req, res) {
 		const { username, userId, errorMsg } = body
 		if (!username || !userId) return res.status(400).json({ error: 'Missing fields' })
 		
-		if (!errorMsg || !errorMsg.includes('joined a game from another device')) {
-			delete players[userId]
-			return res.status(200).json({ success: true, ignored: true })
+		if (players[userId]) {
+			players[userId].status = 'disconnected'
+			players[userId].errorMsg = errorMsg || 'Connection Lost'
+			players[userId].disconnectedAt = now
+		} else {
+			players[userId] = {
+				username,
+				userId,
+				status: 'disconnected',
+				errorMsg: errorMsg || 'Connection Lost',
+				lastSeen: now,
+				shouldRejoin: false,
+				disconnectedAt: now,
+				timeRemaining: 0,
+				selectedScript: 'none'
+			}
 		}
 		
-		players[userId] = {
-			username,
-			userId,
-			status: 'disconnected',
-			errorMsg: errorMsg,
-			lastSeen: now,
-			shouldRejoin: false,
-			disconnectedAt: now
+		return res.status(200).json({ success: true })
+	}
+	
+	if (path === '/api/update-time' && req.method === 'POST') {
+		const { userId, timeToAdd } = body
+		if (!userId || timeToAdd === undefined) {
+			return res.status(400).json({ error: 'Missing fields' })
 		}
+		
+		if (!players[userId]) {
+			return res.status(404).json({ error: 'Player not found' })
+		}
+		
+		players[userId].timeRemaining = (players[userId].timeRemaining || 0) + timeToAdd
+		
+		return res.status(200).json({ success: true, timeRemaining: players[userId].timeRemaining })
+	}
+	
+	if (path === '/api/update-script' && req.method === 'POST') {
+		const { userId, script } = body
+		if (!userId || !script) {
+			return res.status(400).json({ error: 'Missing fields' })
+		}
+		
+		if (!players[userId]) {
+			return res.status(404).json({ error: 'Player not found' })
+		}
+		
+		players[userId].selectedScript = script
 		
 		return res.status(200).json({ success: true })
 	}
