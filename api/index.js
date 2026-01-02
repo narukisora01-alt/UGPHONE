@@ -30,38 +30,40 @@ export default async function handler(req, res) {
 		}
 	}
 	
+	async function calculateCurrentTime(player) {
+		if (player.time_remaining <= 0) return 0
+		
+		const elapsed = (now - player.last_time_update) / 1000
+		return Math.max(0, player.time_remaining - elapsed)
+	}
+	
 	async function cleanupPlayers() {
 		const { data: players } = await supabase
 			.from('players')
 			.select('*')
-			.eq('status', 'online')
 		
 		if (!players) return
 		
 		for (const p of players) {
+			const updates = {}
 			const timeSinceLastSeen = now - p.last_seen
 			
-			if (timeSinceLastSeen > TIMEOUT_MS) {
-				await supabase
-					.from('players')
-					.update({
-						status: 'disconnected',
-						error_msg: 'Connection Timeout',
-						disconnected_at: now
-					})
-					.eq('user_id', p.user_id)
+			if (p.status === 'online' && timeSinceLastSeen > TIMEOUT_MS) {
+				updates.status = 'disconnected'
+				updates.error_msg = 'Connection Timeout'
+				updates.disconnected_at = now
 			}
 			
-			if (p.time_remaining > 0) {
-				const elapsed = (now - p.last_time_update) / 1000
-				const newTime = Math.max(0, p.time_remaining - elapsed)
-				
+			const newTime = await calculateCurrentTime(p)
+			if (newTime !== p.time_remaining) {
+				updates.time_remaining = newTime
+				updates.last_time_update = now
+			}
+			
+			if (Object.keys(updates).length > 0) {
 				await supabase
 					.from('players')
-					.update({
-						time_remaining: newTime,
-						last_time_update: now
-					})
+					.update(updates)
 					.eq('user_id', p.user_id)
 			}
 		}
@@ -101,13 +103,7 @@ export default async function handler(req, res) {
 			})
 		}
 		
-		const wasOnline = existing.status === 'online'
-		const timeSinceLastSeen = (now - existing.last_seen) / 1000
-		
-		let newTime = existing.time_remaining
-		if (!wasOnline && existing.time_remaining > 0 && timeSinceLastSeen < 60) {
-			newTime = Math.max(0, existing.time_remaining - timeSinceLastSeen)
-		}
+		const newTime = await calculateCurrentTime(existing)
 		
 		const updates = {
 			username,
@@ -140,24 +136,22 @@ export default async function handler(req, res) {
 			for (const p of players) {
 				const timeSinceLastSeen = now - p.last_seen
 				let currentStatus = p.status
+				let errorMsg = p.error_msg
 				
 				if (currentStatus === 'online' && timeSinceLastSeen > TIMEOUT_MS) {
 					currentStatus = 'disconnected'
+					errorMsg = 'Connection Timeout'
 					await supabase
 						.from('players')
 						.update({
 							status: 'disconnected',
-							error_msg: 'Connection Timeout',
+							error_msg: errorMsg,
 							disconnected_at: now
 						})
 						.eq('user_id', p.user_id)
 				}
 				
-				let currentTime = p.time_remaining
-				if (currentTime > 0 && currentStatus === 'online') {
-					const elapsed = (now - p.last_time_update) / 1000
-					currentTime = Math.max(0, currentTime - elapsed)
-				}
+				const currentTime = await calculateCurrentTime(p)
 				
 				playersObj[p.user_id] = {
 					username: p.username,
@@ -169,7 +163,7 @@ export default async function handler(req, res) {
 					lastSeen: p.last_seen,
 					lastTimeUpdate: p.last_time_update,
 					firstSeen: p.first_seen,
-					errorMsg: currentStatus === 'disconnected' && timeSinceLastSeen > TIMEOUT_MS ? 'Connection Timeout' : p.error_msg,
+					errorMsg: errorMsg,
 					disconnectedAt: p.disconnected_at
 				}
 			}
@@ -255,13 +249,14 @@ export default async function handler(req, res) {
 		
 		const { data: player } = await supabase
 			.from('players')
-			.select('time_remaining')
+			.select('time_remaining, last_time_update')
 			.eq('user_id', userId)
 			.single()
 		
 		if (!player) return res.status(404).json({ error: 'Player not found' })
 		
-		const newTime = (player.time_remaining || 0) + timeToAdd
+		const currentTime = await calculateCurrentTime(player)
+		const newTime = currentTime + timeToAdd
 		
 		await supabase
 			.from('players')
@@ -298,7 +293,7 @@ export default async function handler(req, res) {
 			.single()
 		
 		if (!scriptData || !scriptData.content) {
-			return res.status(404).send('print("Script not found in database")')
+			return res.status(404).send('')
 		}
 		
 		const serverUrl = req.headers.host ? 'https://' + req.headers.host : 'https://cloudsync-rho.vercel.app'
