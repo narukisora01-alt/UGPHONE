@@ -42,7 +42,7 @@ export default async function handler(req, res) {
 			const updates = {}
 			const timeSinceLastSeen = now - p.last_seen
 
-			if (p.status === 'online' && timeSinceLastSeen > TIMEOUT_MS) {
+			if (p.status === 'online' && timeSinceLastSeen > TIMEOUT_MS && !p.should_rejoin) {
 				updates.status = 'disconnected'
 				updates.error_msg = 'Connection Timeout'
 				updates.disconnected_at = now
@@ -108,7 +108,6 @@ export default async function handler(req, res) {
 			status: 'online',
 			last_seen: now,
 			last_time_update: now,
-			should_rejoin: false,
 			time_remaining: newTime,
 			error_msg: null,
 			disconnected_at: null
@@ -135,7 +134,7 @@ export default async function handler(req, res) {
 					username: p.username,
 					userId: p.user_id,
 					status: p.status,
-					shouldRejoin: p.should_rejoin,
+					shouldRejoin: p.should_rejoin || false,
 					timeRemaining: await calculateCurrentTime(p),
 					selectedScript: p.selected_script,
 					lastSeen: p.last_seen,
@@ -159,6 +158,16 @@ export default async function handler(req, res) {
 	if (path === '/api/rejoin' && req.method === 'POST') {
 		const { userId } = body
 		if (!userId) return res.status(400).json({ error: 'Missing userId' })
+
+		const { data: player } = await supabase
+			.from('players')
+			.select('status')
+			.eq('user_id', userId)
+			.single()
+
+		if (!player) {
+			return res.status(404).json({ error: 'Player not found' })
+		}
 
 		await supabase.from('players').update({
 			should_rejoin: true,
@@ -196,15 +205,20 @@ export default async function handler(req, res) {
 		const currentTime = existing ? await calculateCurrentTime(existing) : 0
 
 		if (existing) {
-			await supabase.from('players').update({
+			const updates = {
 				status: 'disconnected',
 				error_msg: errorMsg,
 				disconnected_at: now,
 				last_seen: now,
-				should_rejoin: false,
 				time_remaining: currentTime,
 				last_time_update: now
-			}).eq('user_id', userId)
+			}
+
+			if (!existing.should_rejoin) {
+				updates.should_rejoin = false
+			}
+
+			await supabase.from('players').update(updates).eq('user_id', userId)
 		} else {
 			await supabase.from('players').insert({
 				user_id: userId,
