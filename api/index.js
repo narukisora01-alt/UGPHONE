@@ -44,11 +44,25 @@ export default async function handler(req, res) {
 			const updates = {}
 			const timeSinceLastSeen = now - p.last_seen
 			
-			// Only timeout if NOT in a rejoinable state
-			if (p.status === 'online' && timeSinceLastSeen > TIMEOUT_MS && !p.should_rejoin) {
+			// Only timeout online players who aren't in rejoin state
+			if (p.status === 'online' && timeSinceLastSeen > TIMEOUT_MS) {
 				updates.status = 'disconnected'
 				updates.error_msg = 'Connection Timeout'
 				updates.disconnected_at = now
+			}
+			
+			// CRITICAL FIX: Don't delete disconnected players who are waiting for rejoin
+			// If should_rejoin is true, keep them around indefinitely
+			if (p.status === 'disconnected' && !p.should_rejoin) {
+				// Only clean up disconnected players after 24 hours (not in rejoin state)
+				const timeSinceDisconnect = now - (p.disconnected_at || p.last_seen)
+				const CLEANUP_THRESHOLD = 24 * 60 * 60 * 1000 // 24 hours
+				
+				if (timeSinceDisconnect > CLEANUP_THRESHOLD) {
+					// Actually delete them from database
+					await supabase.from('players').delete().eq('user_id', p.user_id)
+					continue // Skip time update for deleted players
+				}
 			}
 			
 			const newTime = await calculateCurrentTime(p)
@@ -159,10 +173,11 @@ export default async function handler(req, res) {
 		const { userId } = body
 		if (!userId) return res.status(400).json({ error: 'Missing userId' })
 		
+		// Set rejoin flag - player will stay in disconnected state until they actually reconnect
 		const { error } = await supabase.from('players').update({ 
 			should_rejoin: true,
-			// Don't clear error_msg - it's useful for debugging
-			// Don't change status - it should already be disconnected
+			// Update last_seen so they don't get cleaned up while waiting
+			last_seen: now
 		}).eq('user_id', userId)
 		
 		if (error) return res.status(404).json({ error: 'Player not found' })
