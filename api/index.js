@@ -32,16 +32,12 @@ export default async function handler(req, res) {
 	
 	async function calculateCurrentTime(player) {
 		if (player.time_remaining <= 0) return 0
-		
 		const elapsed = (now - player.last_time_update) / 1000
 		return Math.max(0, player.time_remaining - elapsed)
 	}
 	
 	async function cleanupPlayers() {
-		const { data: players } = await supabase
-			.from('players')
-			.select('*')
-		
+		const { data: players } = await supabase.from('players').select('*')
 		if (!players) return
 		
 		for (const p of players) {
@@ -61,10 +57,7 @@ export default async function handler(req, res) {
 			}
 			
 			if (Object.keys(updates).length > 0) {
-				await supabase
-					.from('players')
-					.update(updates)
-					.eq('user_id', p.user_id)
+				await supabase.from('players').update(updates).eq('user_id', p.user_id)
 			}
 		}
 	}
@@ -73,11 +66,7 @@ export default async function handler(req, res) {
 		const { username, userId } = body
 		if (!username || !userId) return res.status(400).json({ error: 'Missing fields' })
 		
-		const { data: existing } = await supabase
-			.from('players')
-			.select('*')
-			.eq('user_id', userId)
-			.single()
+		const { data: existing } = await supabase.from('players').select('*').eq('user_id', userId).single()
 		
 		if (!existing) {
 			await supabase.from('players').insert({
@@ -95,13 +84,7 @@ export default async function handler(req, res) {
 		}
 		
 		if (existing.status === 'disconnected' && existing.error_msg && existing.error_msg.includes('joined a game from another device')) {
-			await supabase
-				.from('players')
-				.update({
-					last_seen: now
-				})
-				.eq('user_id', userId)
-			
+			await supabase.from('players').update({ last_seen: now }).eq('user_id', userId)
 			return res.status(403).json({ 
 				success: false, 
 				blocked: true,
@@ -111,7 +94,7 @@ export default async function handler(req, res) {
 		
 		const newTime = await calculateCurrentTime(existing)
 		
-		const updates = {
+		await supabase.from('players').update({
 			username,
 			status: 'online',
 			last_seen: now,
@@ -120,29 +103,20 @@ export default async function handler(req, res) {
 			time_remaining: newTime,
 			error_msg: null,
 			disconnected_at: null
-		}
+		}).eq('user_id', userId)
 		
-		await supabase
-			.from('players')
-			.update(updates)
-			.eq('user_id', userId)
-		
-		return res.status(200).json({ success: true, shouldRejoin: existing && existing.should_rejoin })
+		return res.status(200).json({ success: true, shouldRejoin: existing.should_rejoin })
 	}
 	
 	if (path === '/api/players' && req.method === 'GET') {
 		await cleanupPlayers()
 		
-		const { data: players } = await supabase
-			.from('players')
-			.select('*')
-			.order('first_seen', { ascending: false })
+		const { data: players } = await supabase.from('players').select('*').order('first_seen', { ascending: false })
 		
 		const playersObj = {}
 		if (players) {
 			for (const p of players) {
 				const currentTime = await calculateCurrentTime(p)
-				
 				playersObj[p.user_id] = {
 					username: p.username,
 					userId: p.user_id,
@@ -174,16 +148,13 @@ export default async function handler(req, res) {
 		const { userId } = body
 		if (!userId) return res.status(400).json({ error: 'Missing userId' })
 		
-		const { error } = await supabase
-			.from('players')
-			.update({ 
-				should_rejoin: true,
-				error_msg: null
-			})
-			.eq('user_id', userId)
+		const { error } = await supabase.from('players').update({ 
+			should_rejoin: true,
+			error_msg: null,
+			status: 'disconnected'
+		}).eq('user_id', userId)
 		
 		if (error) return res.status(404).json({ error: 'Player not found' })
-		
 		return res.status(200).json({ success: true })
 	}
 	
@@ -195,22 +166,15 @@ export default async function handler(req, res) {
 			return res.status(200).json({ success: true, ignored: true })
 		}
 		
-		const { data: existing } = await supabase
-			.from('players')
-			.select('*')
-			.eq('user_id', userId)
-			.single()
+		const { data: existing } = await supabase.from('players').select('*').eq('user_id', userId).single()
 		
 		if (existing) {
-			await supabase
-				.from('players')
-				.update({
-					status: 'disconnected',
-					error_msg: errorMsg,
-					disconnected_at: now,
-					last_seen: now
-				})
-				.eq('user_id', userId)
+			await supabase.from('players').update({
+				status: 'disconnected',
+				error_msg: errorMsg,
+				disconnected_at: now,
+				last_seen: now
+			}).eq('user_id', userId)
 		} else {
 			await supabase.from('players').insert({
 				user_id: userId,
@@ -236,24 +200,17 @@ export default async function handler(req, res) {
 			return res.status(400).json({ error: 'Missing fields' })
 		}
 		
-		const { data: player } = await supabase
-			.from('players')
-			.select('time_remaining, last_time_update')
-			.eq('user_id', userId)
-			.single()
+		const { data: player } = await supabase.from('players').select('time_remaining, last_time_update').eq('user_id', userId).single()
 		
 		if (!player) return res.status(404).json({ error: 'Player not found' })
 		
 		const currentTime = await calculateCurrentTime(player)
 		const newTime = currentTime + timeToAdd
 		
-		await supabase
-			.from('players')
-			.update({
-				time_remaining: newTime,
-				last_time_update: now
-			})
-			.eq('user_id', userId)
+		await supabase.from('players').update({
+			time_remaining: newTime,
+			last_time_update: now
+		}).eq('user_id', userId)
 		
 		return res.status(200).json({ success: true, timeRemaining: newTime })
 	}
@@ -264,22 +221,14 @@ export default async function handler(req, res) {
 			return res.status(400).json({ error: 'Missing fields' })
 		}
 		
-		const { error } = await supabase
-			.from('players')
-			.update({ selected_script: script })
-			.eq('user_id', userId)
+		const { error } = await supabase.from('players').update({ selected_script: script }).eq('user_id', userId)
 		
 		if (error) return res.status(404).json({ error: 'Player not found' })
-		
 		return res.status(200).json({ success: true })
 	}
 	
 	if (path === '/api/script' && req.method === 'GET') {
-		const { data: scriptData } = await supabase
-			.from('scripts')
-			.select('content')
-			.eq('name', 'main')
-			.single()
+		const { data: scriptData } = await supabase.from('scripts').select('content').eq('name', 'main').single()
 		
 		if (!scriptData || !scriptData.content) {
 			return res.status(404).send('')
