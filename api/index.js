@@ -38,9 +38,10 @@ export default async function handler(req, res) {
 				p.disconnectedAt = now
 			}
 			
-			if (p.timeRemaining !== undefined && p.timeRemaining > 0 && p.status === 'online') {
-				const elapsed = (now - p.lastSeen) / 1000
+			if (p.timeRemaining !== undefined && p.timeRemaining > 0) {
+				const elapsed = (now - (p.lastTimeUpdate || p.lastSeen)) / 1000
 				p.timeRemaining = Math.max(0, p.timeRemaining - elapsed)
+				p.lastTimeUpdate = now
 			}
 		}
 	}
@@ -58,6 +59,7 @@ export default async function handler(req, res) {
 				timeRemaining: 0,
 				selectedScript: 'none',
 				lastSeen: now,
+				lastTimeUpdate: now,
 				firstSeen: now
 			}
 		} else {
@@ -101,9 +103,11 @@ export default async function handler(req, res) {
 		}
 		
 		if (players[userId]) {
-			players[userId].status = 'disconnected'
-			players[userId].errorMsg = errorMsg
-			players[userId].disconnectedAt = now
+			if (players[userId].errorMsg !== 'Connection Timeout') {
+				players[userId].status = 'disconnected'
+				players[userId].errorMsg = errorMsg
+				players[userId].disconnectedAt = now
+			}
 		} else {
 			players[userId] = {
 				username,
@@ -111,6 +115,7 @@ export default async function handler(req, res) {
 				status: 'disconnected',
 				errorMsg: errorMsg,
 				lastSeen: now,
+				lastTimeUpdate: now,
 				shouldRejoin: false,
 				disconnectedAt: now,
 				timeRemaining: 0,
