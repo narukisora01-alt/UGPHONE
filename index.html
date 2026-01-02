@@ -30,21 +30,25 @@
         .section-title { font-size: 20px; font-weight: 400; margin-bottom: 20px; padding-bottom: 15px; border-bottom: 1px solid #222; display: flex; align-items: center; gap: 10px; }
         .pulse { width: 8px; height: 8px; background: #fff; border-radius: 50%; animation: pulse 2s infinite; }
         .pulse-warning { width: 8px; height: 8px; background: #ff0; border-radius: 50%; animation: pulse 2s infinite; }
+        .pulse-rejoin { width: 8px; height: 8px; background: #0ff; border-radius: 50%; animation: pulse 2s infinite; }
         @keyframes pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.3; transform: scale(0.8); } }
         .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 20px; min-height: 100px; }
         .config-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(350px, 1fr)); gap: 20px; min-height: 100px; }
         .card { background: #111; border: 1px solid #222; border-radius: 8px; padding: 25px; transition: all 0.3s ease; }
         .card:hover { border-color: #333; transform: translateY(-4px); }
         .card.warning { border-color: #ff03; }
+        .card.rejoining { border-color: #0ff3; }
         .card-header { display: flex; align-items: center; gap: 15px; margin-bottom: 20px; padding-bottom: 20px; border-bottom: 1px solid #1a1a1a; }
         .avatar { width: 50px; height: 50px; background: #fff; color: #000; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 20px; font-weight: 500; position: relative; }
         .status-dot { position: absolute; bottom: -2px; right: -2px; width: 14px; height: 14px; border-radius: 50%; border: 2px solid #111; }
         .status-dot.online { background: #0f0; }
         .status-dot.offline { background: #f00; }
         .status-dot.pending { background: #ff0; }
+        .status-dot.rejoining { background: #0ff; }
         .card-info h3 { font-size: 18px; font-weight: 400; margin-bottom: 5px; }
         .status { font-size: 11px; color: #666; text-transform: uppercase; letter-spacing: 1px; }
         .status.pending { color: #ff0; }
+        .status.rejoining { color: #0ff; }
         .details { margin-bottom: 20px; }
         .detail { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #1a1a1a; font-size: 13px; align-items: center; }
         .detail:last-child { border-bottom: none; }
@@ -62,6 +66,7 @@
         .btn:disabled { background: #222; color: #666; cursor: not-allowed; }
         .btn.warning { background: #ff0; color: #000; }
         .btn.warning:hover:not(:disabled) { background: #dd0; }
+        .btn.rejoining { background: #0ff; color: #000; }
         .empty { text-align: center; padding: 60px 20px; color: #666; grid-column: 1 / -1; }
         .empty h3 { font-size: 18px; font-weight: 400; margin-bottom: 8px; }
         .empty p { font-size: 13px; }
@@ -89,12 +94,14 @@
         <div class="stats">
             <div class="stat"><h2 id="onlineCount">0</h2><p>Online</p></div>
             <div class="stat"><h2 id="pendingCount">0</h2><p>Pending Rejoin</p></div>
+            <div class="stat"><h2 id="rejoiningCount">0</h2><p>Rejoining</p></div>
             <div class="stat"><h2 id="offlineCount">0</h2><p>Offline</p></div>
             <div class="stat"><h2 id="totalCount">0</h2><p>Total</p></div>
         </div>
         <div class="section"><h2 class="section-title"><span class="pulse"></span>Players Config</h2><div class="config-grid" id="configGrid"></div></div>
         <div class="section"><h2 class="section-title"><span class="pulse"></span>Live Players</h2><div class="grid" id="onlineGrid"></div></div>
         <div class="section"><h2 class="section-title"><span class="pulse-warning"></span>Awaiting Rejoin Approval</h2><div class="grid" id="pendingGrid"></div></div>
+        <div class="section"><h2 class="section-title"><span class="pulse-rejoin"></span>Rejoining Game</h2><div class="grid" id="rejoiningGrid"></div></div>
         <div class="section"><h2 class="section-title">Disconnected</h2><div class="grid" id="offlineGrid"></div></div>
     </div>
     <script>
@@ -201,26 +208,35 @@
         function render() {
             const all = Object.entries(data);
             
-            // CRITICAL FIX: Separate players based on disconnected state AND error message
             const online = all.filter(([_, p]) => p.status === 'online');
+            
+            const rejoining = all.filter(([_, p]) => 
+                p.status === 'disconnected' && p.shouldRejoin
+            );
+            
             const pending = all.filter(([_, p]) => 
                 p.status === 'disconnected' && 
+                !p.shouldRejoin &&
                 p.errorMsg && 
                 p.errorMsg.includes('joined a game from another device')
             );
+            
             const offline = all.filter(([_, p]) => 
                 p.status === 'disconnected' && 
+                !p.shouldRejoin &&
                 (!p.errorMsg || !p.errorMsg.includes('joined a game from another device'))
             );
             
             document.getElementById('onlineCount').textContent = online.length;
             document.getElementById('pendingCount').textContent = pending.length;
+            document.getElementById('rejoiningCount').textContent = rejoining.length;
             document.getElementById('offlineCount').textContent = offline.length;
             document.getElementById('totalCount').textContent = all.length;
             
             renderConfigGrid(all);
             renderGrid('onlineGrid', online, 'online');
             renderGrid('pendingGrid', pending, 'pending');
+            renderGrid('rejoiningGrid', rejoining, 'rejoining');
             renderGrid('offlineGrid', offline, 'offline');
         }
 
@@ -234,8 +250,9 @@
                 const timeRemaining = p.timeRemaining || 0;
                 const hasTime = timeRemaining > 0;
                 const timeClass = hasTime ? 'active' : 'expired';
-                const statusDot = p.status === 'online' ? 'online' : 'offline';
-                return `<div class="card"><div class="card-header"><div class="avatar">${p.username[0].toUpperCase()}<div class="status-dot ${statusDot}"></div></div><div class="card-info"><h3>${p.username}</h3><div class="status">${p.status}</div></div></div><div class="details"><div class="detail"><span class="label">User ID</span><span class="value">${userId}</span></div><div class="detail"><span class="label">Time</span><div class="time-display"><span class="time-badge ${timeClass}">${formatTime(timeRemaining)}</span><div class="input-group"><input type="number" id="time-${userId}" placeholder="10" min="1" value="10"><select class="time-unit-select" id="unit-${userId}"><option value="minutes">Min</option><option value="hours">Hours</option><option value="days">Days</option></select><button class="btn btn-small" onclick="addTime('${userId}')">Add</button></div></div></div><div class="detail"><span class="label">Script</span><select id="script-${userId}" onchange="updateScript('${userId}')"><option value="none" ${p.selectedScript === 'none' ? 'selected' : ''}>None</option><option value="atlas" ${p.selectedScript === 'atlas' ? 'selected' : ''}>Atlas BSS</option></select></div></div></div>`;
+                const statusDot = p.status === 'online' ? 'online' : (p.shouldRejoin ? 'rejoining' : 'offline');
+                const displayStatus = p.status === 'online' ? 'online' : (p.shouldRejoin ? 'rejoining' : 'disconnected');
+                return `<div class="card"><div class="card-header"><div class="avatar">${p.username[0].toUpperCase()}<div class="status-dot ${statusDot}"></div></div><div class="card-info"><h3>${p.username}</h3><div class="status">${displayStatus}</div></div></div><div class="details"><div class="detail"><span class="label">User ID</span><span class="value">${userId}</span></div><div class="detail"><span class="label">Time</span><div class="time-display"><span class="time-badge ${timeClass}">${formatTime(timeRemaining)}</span><div class="input-group"><input type="number" id="time-${userId}" placeholder="10" min="1" value="10"><select class="time-unit-select" id="unit-${userId}"><option value="minutes">Min</option><option value="hours">Hours</option><option value="days">Days</option></select><button class="btn btn-small" onclick="addTime('${userId}')">Add</button></div></div></div><div class="detail"><span class="label">Script</span><select id="script-${userId}" onchange="updateScript('${userId}')"><option value="none" ${p.selectedScript === 'none' ? 'selected' : ''}>None</option><option value="atlas" ${p.selectedScript === 'atlas' ? 'selected' : ''}>Atlas BSS</option></select></div></div></div>`;
             }).join('');
         }
 
@@ -244,18 +261,20 @@
             if (arr.length === 0) {
                 const emptyMessage = type === 'online' ? 'Waiting for connections' : 
                                    type === 'pending' ? 'No players awaiting rejoin approval' : 
+                                   type === 'rejoining' ? 'No players rejoining' :
                                    'No disconnections';
                 grid.innerHTML = `<div class="empty"><h3>No ${type} players</h3><p>${emptyMessage}</p></div>`;
                 return;
             }
             grid.innerHTML = arr.map(([userId, p]) => {
-                const statusDot = type === 'pending' ? 'pending' : type;
-                const cardClass = type === 'pending' ? 'card warning' : 'card';
-                const statusText = type === 'pending' ? 'AWAITING APPROVAL' : (p.shouldRejoin ? 'Rejoin sent' : type);
-                const statusClass = type === 'pending' ? 'status pending' : 'status';
+                const statusDot = type === 'rejoining' ? 'rejoining' : (type === 'pending' ? 'pending' : type);
+                const cardClass = type === 'rejoining' ? 'card rejoining' : (type === 'pending' ? 'card warning' : 'card');
+                const statusText = type === 'rejoining' ? 'REJOINING GAME' : (type === 'pending' ? 'AWAITING APPROVAL' : type);
+                const statusClass = type === 'rejoining' ? 'status rejoining' : (type === 'pending' ? 'status pending' : 'status');
                 const buttonClass = type === 'pending' ? 'btn warning' : 'btn';
+                const showButton = type !== 'online' && type !== 'rejoining';
                 
-                return `<div class="${cardClass}"><div class="card-header"><div class="avatar">${p.username[0].toUpperCase()}<div class="status-dot ${statusDot}"></div></div><div class="card-info"><h3>${p.username}</h3><div class="${statusClass}">${statusText}</div></div></div><div class="details"><div class="detail"><span class="label">User ID</span><span class="value">${userId}</span></div>${p.errorMsg ? `<div class="detail"><span class="label">Error</span><span class="value">${p.errorMsg}</span></div>` : ''}</div>${type !== 'online' ? `<button class="${buttonClass}" onclick="rejoin('${userId}')" ${p.shouldRejoin ? 'disabled' : ''}>${p.shouldRejoin ? 'Rejoin sent' : type === 'pending' ? 'Approve Rejoin' : 'Rejoin'}</button>` : ''}</div>`;
+                return `<div class="${cardClass}"><div class="card-header"><div class="avatar">${p.username[0].toUpperCase()}<div class="status-dot ${statusDot}"></div></div><div class="card-info"><h3>${p.username}</h3><div class="${statusClass}">${statusText}</div></div></div><div class="details"><div class="detail"><span class="label">User ID</span><span class="value">${userId}</span></div>${p.errorMsg ? `<div class="detail"><span class="label">Error</span><span class="value">${p.errorMsg}</span></div>` : ''}</div>${showButton ? `<button class="${buttonClass}" onclick="rejoin('${userId}')">${type === 'pending' ? 'Approve Rejoin' : 'Rejoin'}</button>` : ''}</div>`;
             }).join('');
         }
 
