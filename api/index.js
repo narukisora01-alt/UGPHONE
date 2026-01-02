@@ -1,7 +1,11 @@
-const players = {}
+import { createClient } from '@supabase/supabase-js'
+
+const supabase = createClient(
+	process.env.SUPABASE_URL,
+	process.env.SUPABASE_KEY
+)
+
 const TIMEOUT_MS = 10000
-let lastCleanup = 0
-const CLEANUP_INTERVAL = 2000
 
 export default async function handler(req, res) {
 	res.setHeader('Access-Control-Allow-Origin', '*')
@@ -25,23 +29,37 @@ export default async function handler(req, res) {
 		}
 	}
 	
-	function cleanupPlayers() {
-		if (now - lastCleanup < CLEANUP_INTERVAL) return
-		lastCleanup = now
+	async function cleanupPlayers() {
+		const { data: players } = await supabase
+			.from('players')
+			.select('*')
+			.eq('status', 'online')
 		
-		for (const id in players) {
-			const p = players[id]
-			
-			if (p.status === 'online' && now - p.lastSeen > TIMEOUT_MS) {
-				p.status = 'disconnected'
-				p.errorMsg = 'Connection Timeout'
-				p.disconnectedAt = now
+		if (!players) return
+		
+		for (const p of players) {
+			if (now - p.last_seen > TIMEOUT_MS) {
+				await supabase
+					.from('players')
+					.update({
+						status: 'disconnected',
+						error_msg: 'Connection Timeout',
+						disconnected_at: now
+					})
+					.eq('user_id', p.user_id)
 			}
 			
-			if (p.timeRemaining !== undefined && p.timeRemaining > 0 && p.status === 'online') {
-				const elapsed = (now - p.lastTimeUpdate) / 1000
-				p.timeRemaining = Math.max(0, p.timeRemaining - elapsed)
-				p.lastTimeUpdate = now
+			if (p.time_remaining > 0 && p.status === 'online') {
+				const elapsed = (now - p.last_time_update) / 1000
+				const newTime = Math.max(0, p.time_remaining - elapsed)
+				
+				await supabase
+					.from('players')
+					.update({
+						time_remaining: newTime,
+						last_time_update: now
+					})
+					.eq('user_id', p.user_id)
 			}
 		}
 	}
@@ -50,54 +68,97 @@ export default async function handler(req, res) {
 		const { username, userId } = body
 		if (!username || !userId) return res.status(400).json({ error: 'Missing fields' })
 		
-		if (!players[userId]) {
-			players[userId] = {
+		const { data: existing } = await supabase
+			.from('players')
+			.select('*')
+			.eq('user_id', userId)
+			.single()
+		
+		if (!existing) {
+			await supabase.from('players').insert({
+				user_id: userId,
 				username,
-				userId,
 				status: 'online',
-				shouldRejoin: false,
-				timeRemaining: 0,
-				selectedScript: 'none',
-				lastSeen: now,
-				lastTimeUpdate: now,
-				firstSeen: now
-			}
+				should_rejoin: false,
+				time_remaining: 0,
+				selected_script: 'none',
+				last_seen: now,
+				last_time_update: now,
+				first_seen: now
+			})
 		} else {
-			const wasOnline = players[userId].status === 'online'
-			const timeSinceLastSeen = (now - players[userId].lastSeen) / 1000
+			const wasOnline = existing.status === 'online'
+			const timeSinceLastSeen = (now - existing.last_seen) / 1000
 			
-			if (!wasOnline && players[userId].timeRemaining > 0 && timeSinceLastSeen < 60) {
-				players[userId].timeRemaining = Math.max(0, players[userId].timeRemaining - timeSinceLastSeen)
+			let newTime = existing.time_remaining
+			if (!wasOnline && existing.time_remaining > 0 && timeSinceLastSeen < 60) {
+				newTime = Math.max(0, existing.time_remaining - timeSinceLastSeen)
 			}
 			
-			players[userId].username = username
-			players[userId].status = 'online'
-			players[userId].lastSeen = now
-			players[userId].lastTimeUpdate = now
-			players[userId].shouldRejoin = false
-			
-			if (players[userId].errorMsg === 'Connection Timeout') {
-				delete players[userId].errorMsg
-				delete players[userId].disconnectedAt
+			const updates = {
+				username,
+				status: 'online',
+				last_seen: now,
+				last_time_update: now,
+				should_rejoin: false,
+				time_remaining: newTime
 			}
+			
+			if (existing.error_msg === 'Connection Timeout') {
+				updates.error_msg = null
+				updates.disconnected_at = null
+			}
+			
+			await supabase
+				.from('players')
+				.update(updates)
+				.eq('user_id', userId)
 		}
 		
-		cleanupPlayers()
+		await cleanupPlayers()
 		return res.status(200).json({ success: true })
 	}
 	
 	if (path === '/api/players' && req.method === 'GET') {
-		cleanupPlayers()
-		return res.status(200).json({ players })
+		await cleanupPlayers()
+		
+		const { data: players } = await supabase
+			.from('players')
+			.select('*')
+			.order('first_seen', { ascending: false })
+		
+		const playersObj = {}
+		if (players) {
+			for (const p of players) {
+				playersObj[p.user_id] = {
+					username: p.username,
+					userId: p.user_id,
+					status: p.status,
+					shouldRejoin: p.should_rejoin,
+					timeRemaining: p.time_remaining,
+					selectedScript: p.selected_script,
+					lastSeen: p.last_seen,
+					lastTimeUpdate: p.last_time_update,
+					firstSeen: p.first_seen,
+					errorMsg: p.error_msg,
+					disconnectedAt: p.disconnected_at
+				}
+			}
+		}
+		
+		return res.status(200).json({ players: playersObj })
 	}
 	
 	if (path === '/api/rejoin' && req.method === 'POST') {
 		const { userId } = body
-		if (!userId || !players[userId]) {
-			return res.status(404).json({ error: 'Player not found' })
-		}
+		if (!userId) return res.status(400).json({ error: 'Missing userId' })
 		
-		players[userId].shouldRejoin = true
+		const { error } = await supabase
+			.from('players')
+			.update({ should_rejoin: true })
+			.eq('user_id', userId)
+		
+		if (error) return res.status(404).json({ error: 'Player not found' })
 		
 		return res.status(200).json({ success: true })
 	}
@@ -110,26 +171,37 @@ export default async function handler(req, res) {
 			return res.status(200).json({ success: true, ignored: true })
 		}
 		
-		if (players[userId]) {
-			if (players[userId].errorMsg !== 'Connection Timeout') {
-				players[userId].status = 'disconnected'
-				players[userId].errorMsg = errorMsg
-				players[userId].disconnectedAt = now
+		const { data: existing } = await supabase
+			.from('players')
+			.select('*')
+			.eq('user_id', userId)
+			.single()
+		
+		if (existing) {
+			if (existing.error_msg !== 'Connection Timeout') {
+				await supabase
+					.from('players')
+					.update({
+						status: 'disconnected',
+						error_msg: errorMsg,
+						disconnected_at: now
+					})
+					.eq('user_id', userId)
 			}
 		} else {
-			players[userId] = {
+			await supabase.from('players').insert({
+				user_id: userId,
 				username,
-				userId,
 				status: 'disconnected',
-				errorMsg: errorMsg,
-				lastSeen: now,
-				lastTimeUpdate: now,
-				shouldRejoin: false,
-				disconnectedAt: now,
-				timeRemaining: 0,
-				selectedScript: 'none',
-				firstSeen: now
-			}
+				error_msg: errorMsg,
+				last_seen: now,
+				last_time_update: now,
+				should_rejoin: false,
+				disconnected_at: now,
+				time_remaining: 0,
+				selected_script: 'none',
+				first_seen: now
+			})
 		}
 		
 		return res.status(200).json({ success: true })
@@ -141,15 +213,25 @@ export default async function handler(req, res) {
 			return res.status(400).json({ error: 'Missing fields' })
 		}
 		
-		if (!players[userId]) {
-			return res.status(404).json({ error: 'Player not found' })
-		}
+		const { data: player } = await supabase
+			.from('players')
+			.select('time_remaining')
+			.eq('user_id', userId)
+			.single()
 		
-		const currentTime = players[userId].timeRemaining || 0
-		players[userId].timeRemaining = currentTime + timeToAdd
-		players[userId].lastTimeUpdate = now
+		if (!player) return res.status(404).json({ error: 'Player not found' })
 		
-		return res.status(200).json({ success: true, timeRemaining: players[userId].timeRemaining })
+		const newTime = (player.time_remaining || 0) + timeToAdd
+		
+		await supabase
+			.from('players')
+			.update({
+				time_remaining: newTime,
+				last_time_update: now
+			})
+			.eq('user_id', userId)
+		
+		return res.status(200).json({ success: true, timeRemaining: newTime })
 	}
 	
 	if (path === '/api/update-script' && req.method === 'POST') {
@@ -158,11 +240,12 @@ export default async function handler(req, res) {
 			return res.status(400).json({ error: 'Missing fields' })
 		}
 		
-		if (!players[userId]) {
-			return res.status(404).json({ error: 'Player not found' })
-		}
+		const { error } = await supabase
+			.from('players')
+			.update({ selected_script: script })
+			.eq('user_id', userId)
 		
-		players[userId].selectedScript = script
+		if (error) return res.status(404).json({ error: 'Player not found' })
 		
 		return res.status(200).json({ success: true })
 	}
