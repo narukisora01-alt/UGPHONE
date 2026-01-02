@@ -19,6 +19,66 @@
             padding: 40px 20px;
         }
 
+        .auth-overlay {
+            position: fixed;
+            inset: 0;
+            background: #0a0a0a;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+
+        .auth-box {
+            background: #111;
+            border: 1px solid #222;
+            border-radius: 12px;
+            padding: 40px;
+            max-width: 400px;
+            width: 90%;
+            text-align: center;
+        }
+
+        .auth-box h2 {
+            font-size: 24px;
+            font-weight: 400;
+            margin-bottom: 10px;
+        }
+
+        .auth-box p {
+            color: #666;
+            font-size: 13px;
+            margin-bottom: 30px;
+        }
+
+        .auth-input {
+            width: 100%;
+            background: #1a1a1a;
+            color: #fff;
+            border: 1px solid #333;
+            border-radius: 6px;
+            padding: 14px;
+            font-size: 14px;
+            margin-bottom: 20px;
+            outline: none;
+        }
+
+        .auth-input:focus {
+            border-color: #555;
+        }
+
+        .auth-error {
+            color: #f00;
+            font-size: 12px;
+            margin-bottom: 15px;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+
+        .auth-error.show {
+            opacity: 1;
+        }
+
         .container {
             max-width: 1400px;
             margin: 0 auto;
@@ -42,6 +102,25 @@
             color: #666;
             font-size: 14px;
             font-weight: 400;
+        }
+
+        .logout-btn {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: #222;
+            color: #fff;
+            border: 1px solid #333;
+            border-radius: 6px;
+            padding: 10px 20px;
+            font-size: 12px;
+            cursor: pointer;
+            transition: all 0.3s;
+            z-index: 100;
+        }
+
+        .logout-btn:hover {
+            background: #333;
         }
 
         .stats {
@@ -219,6 +298,7 @@
             display: flex;
             align-items: center;
             gap: 10px;
+            flex-wrap: wrap;
         }
 
         .time-badge {
@@ -304,6 +384,7 @@
         .input-group {
             display: flex;
             gap: 8px;
+            align-items: center;
         }
 
         input[type="number"] {
@@ -315,11 +396,22 @@
             padding: 8px 12px;
             font-size: 12px;
             outline: none;
-            width: 70px;
+            width: 60px;
         }
 
         input[type="number"]:focus {
             border-color: #555;
+        }
+
+        .time-unit-select {
+            background: #1a1a1a;
+            color: #fff;
+            border: 1px solid #333;
+            border-radius: 4px;
+            padding: 8px;
+            font-size: 11px;
+            cursor: pointer;
+            outline: none;
         }
 
         .btn-small {
@@ -336,7 +428,19 @@
     </style>
 </head>
 <body>
-    <div class="container">
+    <div class="auth-overlay" id="authOverlay">
+        <div class="auth-box">
+            <h2>Admin Authorization</h2>
+            <p>Enter authorization key to access player management</p>
+            <input type="password" class="auth-input" id="authInput" placeholder="Enter authorization key">
+            <div class="auth-error" id="authError">Invalid authorization key</div>
+            <button class="btn" onclick="authenticate()">Access Dashboard</button>
+        </div>
+    </div>
+
+    <button class="logout-btn" id="logoutBtn" style="display: none;" onclick="logout()">Logout</button>
+
+    <div class="container" id="mainContent" style="display: none;">
         <div class="header">
             <h1>Player Manager</h1>
             <p>Real-time monitoring & control system</p>
@@ -381,15 +485,69 @@
 
     <script>
         const API = window.location.origin;
+        const AUTH_KEY = 'Brandon09364168683!';
         let data = {};
+        let isAuthenticated = false;
+
+        function authenticate() {
+            const input = document.getElementById('authInput');
+            const error = document.getElementById('authError');
+            
+            if (input.value === AUTH_KEY) {
+                isAuthenticated = true;
+                sessionStorage.setItem('auth', 'true');
+                document.getElementById('authOverlay').style.display = 'none';
+                document.getElementById('mainContent').style.display = 'block';
+                document.getElementById('logoutBtn').style.display = 'block';
+                load();
+                setInterval(load, 2000);
+            } else {
+                error.classList.add('show');
+                input.value = '';
+                setTimeout(() => error.classList.remove('show'), 3000);
+            }
+        }
+
+        function logout() {
+            isAuthenticated = false;
+            sessionStorage.removeItem('auth');
+            document.getElementById('authOverlay').style.display = 'flex';
+            document.getElementById('mainContent').style.display = 'none';
+            document.getElementById('logoutBtn').style.display = 'none';
+            document.getElementById('authInput').value = '';
+        }
+
+        document.getElementById('authInput').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') authenticate();
+        });
+
+        if (sessionStorage.getItem('auth') === 'true') {
+            isAuthenticated = true;
+            document.getElementById('authOverlay').style.display = 'none';
+            document.getElementById('mainContent').style.display = 'block';
+            document.getElementById('logoutBtn').style.display = 'block';
+            load();
+            setInterval(load, 2000);
+        }
 
         function formatTime(seconds) {
-            const mins = Math.floor(seconds / 60);
+            const days = Math.floor(seconds / 86400);
+            const hours = Math.floor((seconds % 86400) / 3600);
+            const mins = Math.floor((seconds % 3600) / 60);
             const secs = Math.floor(seconds % 60);
-            return `${mins}m ${secs}s`;
+            
+            if (days > 0) {
+                return `${days}d ${hours}h ${mins}m`;
+            } else if (hours > 0) {
+                return `${hours}h ${mins}m ${secs}s`;
+            } else {
+                return `${mins}m ${secs}s`;
+            }
         }
 
         async function load() {
+            if (!isAuthenticated) return;
+            
             try {
                 const res = await fetch(`${API}/api/players`, {
                     cache: 'no-cache',
@@ -461,7 +619,12 @@
                                 <div class="time-display">
                                     <span class="time-badge ${timeClass}">${formatTime(timeRemaining)}</span>
                                     <div class="input-group">
-                                        <input type="number" id="time-${userId}" placeholder="Min" min="0" value="10">
+                                        <input type="number" id="time-${userId}" placeholder="10" min="1" value="10">
+                                        <select class="time-unit-select" id="unit-${userId}">
+                                            <option value="minutes">Min</option>
+                                            <option value="hours">Hours</option>
+                                            <option value="days">Days</option>
+                                        </select>
                                         <button class="btn btn-small" onclick="addTime('${userId}')">Add</button>
                                     </div>
                                 </div>
@@ -529,11 +692,20 @@
 
         async function addTime(userId) {
             const input = document.getElementById(`time-${userId}`);
-            const minutes = parseInt(input.value) || 0;
+            const unitSelect = document.getElementById(`unit-${userId}`);
+            const amount = parseInt(input.value) || 0;
+            const unit = unitSelect.value;
             
-            if (minutes <= 0) {
-                alert('Please enter a valid number of minutes');
+            if (amount <= 0) {
+                alert('Please enter a valid number');
                 return;
+            }
+            
+            let seconds = amount * 60;
+            if (unit === 'hours') {
+                seconds = amount * 3600;
+            } else if (unit === 'days') {
+                seconds = amount * 86400;
             }
             
             try {
@@ -542,12 +714,13 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ 
                         userId, 
-                        timeToAdd: minutes * 60 
+                        timeToAdd: seconds
                     })
                 });
                 const json = await res.json();
                 if (json.success) {
                     input.value = '10';
+                    unitSelect.value = 'minutes';
                     await load();
                 }
             } catch (e) {
@@ -589,9 +762,6 @@
                 console.error('Rejoin error:', e);
             }
         }
-
-        load();
-        setInterval(load, 2000);
     </script>
 </body>
 </html>
