@@ -44,7 +44,8 @@ export default async function handler(req, res) {
 			const updates = {}
 			const timeSinceLastSeen = now - p.last_seen
 			
-			if (p.status === 'online' && timeSinceLastSeen > TIMEOUT_MS) {
+			// Only timeout if NOT in a rejoinable state
+			if (p.status === 'online' && timeSinceLastSeen > TIMEOUT_MS && !p.should_rejoin) {
 				updates.status = 'disconnected'
 				updates.error_msg = 'Connection Timeout'
 				updates.disconnected_at = now
@@ -83,29 +84,39 @@ export default async function handler(req, res) {
 			return res.status(200).json({ success: true, shouldRejoin: false })
 		}
 		
-		if (existing.status === 'disconnected' && existing.error_msg && existing.error_msg.includes('joined a game from another device')) {
+		// FIX #1: Only block if there's a CURRENT session conflict
+		// If should_rejoin is true, this is an intentional reconnect - allow it
+		if (existing.status === 'disconnected' && 
+		    existing.error_msg && 
+		    existing.error_msg.includes('joined a game from another device') &&
+		    !existing.should_rejoin) {
+			// Player is trying to connect while another session exists
 			await supabase.from('players').update({ last_seen: now }).eq('user_id', userId)
 			return res.status(403).json({ 
 				success: false, 
 				blocked: true,
-				shouldRejoin: existing.should_rejoin 
+				shouldRejoin: false
 			})
 		}
 		
 		const newTime = await calculateCurrentTime(existing)
 		
+		// FIX #2: Clear rejoin state and error when successfully reconnecting
 		await supabase.from('players').update({
 			username,
 			status: 'online',
 			last_seen: now,
 			last_time_update: now,
-			should_rejoin: false,
+			should_rejoin: false, // Clear rejoin flag
 			time_remaining: newTime,
-			error_msg: null,
+			error_msg: null, // Clear error
 			disconnected_at: null
 		}).eq('user_id', userId)
 		
-		return res.status(200).json({ success: true, shouldRejoin: existing.should_rejoin })
+		return res.status(200).json({ 
+			success: true, 
+			shouldRejoin: existing.should_rejoin // Tell client if this was a rejoin
+		})
 	}
 	
 	if (path === '/api/players' && req.method === 'GET') {
@@ -150,8 +161,8 @@ export default async function handler(req, res) {
 		
 		const { error } = await supabase.from('players').update({ 
 			should_rejoin: true,
-			error_msg: null,
-			status: 'disconnected'
+			// Don't clear error_msg - it's useful for debugging
+			// Don't change status - it should already be disconnected
 		}).eq('user_id', userId)
 		
 		if (error) return res.status(404).json({ error: 'Player not found' })
@@ -162,9 +173,8 @@ export default async function handler(req, res) {
 		const { username, userId, errorMsg } = body
 		if (!username || !userId) return res.status(400).json({ error: 'Missing fields' })
 		
-		if (!errorMsg || !errorMsg.includes('joined a game from another device')) {
-			return res.status(200).json({ success: true, ignored: true })
-		}
+		// FIX #3: Same-account disconnects should be treated as rejoinable
+		const isSameAccountKick = errorMsg && errorMsg.includes('joined a game from another device')
 		
 		const { data: existing } = await supabase.from('players').select('*').eq('user_id', userId).single()
 		
@@ -173,7 +183,8 @@ export default async function handler(req, res) {
 				status: 'disconnected',
 				error_msg: errorMsg,
 				disconnected_at: now,
-				last_seen: now
+				last_seen: now,
+				should_rejoin: isSameAccountKick // CRITICAL FIX: Mark as rejoinable
 			}).eq('user_id', userId)
 		} else {
 			await supabase.from('players').insert({
@@ -183,7 +194,7 @@ export default async function handler(req, res) {
 				error_msg: errorMsg,
 				last_seen: now,
 				last_time_update: now,
-				should_rejoin: false,
+				should_rejoin: isSameAccountKick, // CRITICAL FIX: Mark as rejoinable
 				disconnected_at: now,
 				time_remaining: 0,
 				selected_script: 'none',
