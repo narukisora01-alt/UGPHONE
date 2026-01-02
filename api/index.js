@@ -89,31 +89,41 @@ export default async function handler(req, res) {
 				last_time_update: now,
 				first_seen: now
 			})
-		} else {
-			const wasOnline = existing.status === 'online'
-			const timeSinceLastSeen = (now - existing.last_seen) / 1000
-			
-			let newTime = existing.time_remaining
-			if (!wasOnline && existing.time_remaining > 0 && timeSinceLastSeen < 60) {
-				newTime = Math.max(0, existing.time_remaining - timeSinceLastSeen)
-			}
-			
-			const updates = {
-				username,
-				status: 'online',
-				last_seen: now,
-				last_time_update: now,
-				should_rejoin: false,
-				time_remaining: newTime,
-				error_msg: null,
-				disconnected_at: null
-			}
-			
-			await supabase
-				.from('players')
-				.update(updates)
-				.eq('user_id', userId)
+			await cleanupPlayers()
+			return res.status(200).json({ success: true, shouldRejoin: false })
 		}
+		
+		if (existing.status === 'disconnected' && existing.error_msg && existing.error_msg.includes('joined a game from another device')) {
+			return res.status(403).json({ 
+				success: false, 
+				blocked: true,
+				shouldRejoin: existing.should_rejoin 
+			})
+		}
+		
+		const wasOnline = existing.status === 'online'
+		const timeSinceLastSeen = (now - existing.last_seen) / 1000
+		
+		let newTime = existing.time_remaining
+		if (!wasOnline && existing.time_remaining > 0 && timeSinceLastSeen < 60) {
+			newTime = Math.max(0, existing.time_remaining - timeSinceLastSeen)
+		}
+		
+		const updates = {
+			username,
+			status: 'online',
+			last_seen: now,
+			last_time_update: now,
+			should_rejoin: false,
+			time_remaining: newTime,
+			error_msg: null,
+			disconnected_at: null
+		}
+		
+		await supabase
+			.from('players')
+			.update(updates)
+			.eq('user_id', userId)
 		
 		await cleanupPlayers()
 		return res.status(200).json({ success: true, shouldRejoin: existing && existing.should_rejoin })
@@ -182,7 +192,10 @@ export default async function handler(req, res) {
 		
 		const { error } = await supabase
 			.from('players')
-			.update({ should_rejoin: true })
+			.update({ 
+				should_rejoin: true,
+				error_msg: null
+			})
 			.eq('user_id', userId)
 		
 		if (error) return res.status(404).json({ error: 'Player not found' })
@@ -295,6 +308,7 @@ end
 local running = true
 local scriptLoaded = false
 local teleporting = false
+local blocked = false
 
 local function makeRequest(endpoint, method, data)
 	local success, result = pcall(function()
@@ -325,6 +339,11 @@ local function checkTimeAndScript()
 end
 
 local function sendHeartbeat()
+	if blocked then
+		local _, _, shouldRejoinNow = checkTimeAndScript()
+		return shouldRejoinNow
+	end
+	
 	local response = makeRequest("/api/heartbeat", "POST", {
 		username = player.Name,
 		userId = tostring(player.UserId)
@@ -334,8 +353,15 @@ local function sendHeartbeat()
 		local success, data = pcall(function()
 			return HttpService:JSONDecode(response.Body)
 		end)
-		if success and data.shouldRejoin then
-			return true
+		if success then
+			if data.blocked then
+				blocked = true
+				print("Heartbeat blocked - waiting for rejoin command...")
+				return data.shouldRejoin
+			end
+			if data.shouldRejoin then
+				return true
+			end
 		end
 	end
 	return false
@@ -351,6 +377,7 @@ local function reportDisconnect(reason)
 		userId = tostring(player.UserId),
 		errorMsg = reason
 	})
+	blocked = true
 	running = false
 end
 
@@ -437,7 +464,9 @@ task.spawn(function()
 	while running and not teleporting do
 		task.wait(3)
 		
-		if teleporting then break end
+		if teleporting or blocked then 
+			if not blocked then break end
+		end
 		
 		local shouldRejoinNow = sendHeartbeat()
 		
@@ -448,13 +477,15 @@ task.spawn(function()
 			break
 		end
 		
-		local currentTime, currentScript = checkTimeAndScript()
-		
-		if not currentTime or currentTime <= 0 then
-			print("Time expired. Rejoining in 2 seconds...")
-			task.wait(2)
-			teleportToGame()
-			break
+		if not blocked then
+			local currentTime, currentScript = checkTimeAndScript()
+			
+			if not currentTime or currentTime <= 0 then
+				print("Time expired. Rejoining in 2 seconds...")
+				task.wait(2)
+				teleportToGame()
+				break
+			end
 		end
 	end
 end)`
