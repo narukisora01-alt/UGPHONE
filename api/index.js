@@ -101,6 +101,7 @@ export default async function handler(req, res) {
 				status: 'online',
 				last_seen: now,
 				last_time_update: now,
+				should_rejoin: false,
 				time_remaining: newTime
 			}
 			
@@ -116,7 +117,7 @@ export default async function handler(req, res) {
 		}
 		
 		await cleanupPlayers()
-		return res.status(200).json({ success: true })
+		return res.status(200).json({ success: true, shouldRejoin: existing ? existing.should_rejoin : false })
 	}
 	
 	if (path === '/api/players' && req.method === 'GET') {
