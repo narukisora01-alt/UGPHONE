@@ -5,7 +5,7 @@ const supabase = createClient(
 	process.env.SUPABASE_KEY
 )
 
-const TIMEOUT_MS = 30000
+const TIMEOUT_MS = 60000
 const AUTH_KEY = process.env.AUTH_KEY
 
 export default async function handler(req, res) {
@@ -91,7 +91,6 @@ export default async function handler(req, res) {
 				last_time_update: now,
 				first_seen: now
 			})
-			await cleanupPlayers()
 			return res.status(200).json({ success: true, shouldRejoin: false })
 		}
 		
@@ -121,7 +120,6 @@ export default async function handler(req, res) {
 			.update(updates)
 			.eq('user_id', userId)
 		
-		await cleanupPlayers()
 		return res.status(200).json({ success: true, shouldRejoin: existing && existing.should_rejoin })
 	}
 	
@@ -134,36 +132,19 @@ export default async function handler(req, res) {
 		const playersObj = {}
 		if (players) {
 			for (const p of players) {
-				const timeSinceLastSeen = now - p.last_seen
-				let currentStatus = p.status
-				let errorMsg = p.error_msg
-				
-				if (currentStatus === 'online' && timeSinceLastSeen > TIMEOUT_MS) {
-					currentStatus = 'disconnected'
-					errorMsg = 'Connection Timeout'
-					await supabase
-						.from('players')
-						.update({
-							status: 'disconnected',
-							error_msg: errorMsg,
-							disconnected_at: now
-						})
-						.eq('user_id', p.user_id)
-				}
-				
 				const currentTime = await calculateCurrentTime(p)
 				
 				playersObj[p.user_id] = {
 					username: p.username,
 					userId: p.user_id,
-					status: currentStatus,
+					status: p.status,
 					shouldRejoin: p.should_rejoin,
 					timeRemaining: currentTime,
 					selectedScript: p.selected_script,
 					lastSeen: p.last_seen,
 					lastTimeUpdate: p.last_time_update,
 					firstSeen: p.first_seen,
-					errorMsg: errorMsg,
+					errorMsg: p.error_msg,
 					disconnectedAt: p.disconnected_at
 				}
 			}
