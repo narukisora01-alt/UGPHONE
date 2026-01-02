@@ -360,6 +360,7 @@ local function sendHeartbeat()
 				return data.shouldRejoin
 			end
 			if data.shouldRejoin then
+				blocked = false
 				return true
 			end
 		end
@@ -378,7 +379,6 @@ local function reportDisconnect(reason)
 		errorMsg = reason
 	})
 	blocked = true
-	running = false
 end
 
 local function teleportToGame()
@@ -412,6 +412,7 @@ local timeRemaining, selectedScript, shouldRejoin = checkTimeAndScript()
 
 if shouldRejoin then
 	print("Rejoin requested by admin. Teleporting...")
+	blocked = false
 	task.wait(1)
 	teleportToGame()
 	return
@@ -464,14 +465,13 @@ task.spawn(function()
 	while running and not teleporting do
 		task.wait(3)
 		
-		if teleporting or blocked then 
-			if not blocked then break end
-		end
+		if teleporting then break end
 		
 		local shouldRejoinNow = sendHeartbeat()
 		
 		if shouldRejoinNow then
 			print("Rejoin command received. Teleporting...")
+			blocked = false
 			task.wait(1)
 			teleportToGame()
 			break
