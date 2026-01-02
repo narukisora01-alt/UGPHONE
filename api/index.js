@@ -38,8 +38,8 @@ export default async function handler(req, res) {
 				p.disconnectedAt = now
 			}
 			
-			if (p.timeRemaining !== undefined && p.timeRemaining > 0) {
-				const elapsed = (now - (p.lastTimeUpdate || p.lastSeen)) / 1000
+			if (p.timeRemaining !== undefined && p.timeRemaining > 0 && p.status === 'online') {
+				const elapsed = (now - p.lastTimeUpdate) / 1000
 				p.timeRemaining = Math.max(0, p.timeRemaining - elapsed)
 				p.lastTimeUpdate = now
 			}
@@ -63,9 +63,17 @@ export default async function handler(req, res) {
 				firstSeen: now
 			}
 		} else {
+			const wasOnline = players[userId].status === 'online'
+			const timeSinceLastSeen = (now - players[userId].lastSeen) / 1000
+			
+			if (!wasOnline && players[userId].timeRemaining > 0 && timeSinceLastSeen < 60) {
+				players[userId].timeRemaining = Math.max(0, players[userId].timeRemaining - timeSinceLastSeen)
+			}
+			
 			players[userId].username = username
 			players[userId].status = 'online'
 			players[userId].lastSeen = now
+			players[userId].lastTimeUpdate = now
 			players[userId].shouldRejoin = false
 			
 			if (players[userId].errorMsg === 'Connection Timeout') {
@@ -137,7 +145,9 @@ export default async function handler(req, res) {
 			return res.status(404).json({ error: 'Player not found' })
 		}
 		
-		players[userId].timeRemaining = (players[userId].timeRemaining || 0) + timeToAdd
+		const currentTime = players[userId].timeRemaining || 0
+		players[userId].timeRemaining = currentTime + timeToAdd
+		players[userId].lastTimeUpdate = now
 		
 		return res.status(200).json({ success: true, timeRemaining: players[userId].timeRemaining })
 	}
