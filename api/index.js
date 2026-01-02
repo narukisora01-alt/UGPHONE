@@ -38,10 +38,6 @@ export default async function handler(req, res) {
 				p.disconnectedAt = now
 			}
 			
-			if (p.status === 'disconnected' && p.errorMsg === 'Connection Timeout' && now - p.disconnectedAt > 60000) {
-				delete players[id]
-			}
-			
 			if (p.timeRemaining !== undefined && p.timeRemaining > 0 && p.status === 'online') {
 				const elapsed = (now - p.lastSeen) / 1000
 				p.timeRemaining = Math.max(0, p.timeRemaining - elapsed)
@@ -61,7 +57,8 @@ export default async function handler(req, res) {
 				shouldRejoin: false,
 				timeRemaining: 0,
 				selectedScript: 'none',
-				lastSeen: now
+				lastSeen: now,
+				firstSeen: now
 			}
 		} else {
 			players[userId].username = username
@@ -99,21 +96,26 @@ export default async function handler(req, res) {
 		const { username, userId, errorMsg } = body
 		if (!username || !userId) return res.status(400).json({ error: 'Missing fields' })
 		
+		if (!errorMsg || !errorMsg.includes('joined a game from another device')) {
+			return res.status(200).json({ success: true, ignored: true })
+		}
+		
 		if (players[userId]) {
 			players[userId].status = 'disconnected'
-			players[userId].errorMsg = errorMsg || 'Connection Lost'
+			players[userId].errorMsg = errorMsg
 			players[userId].disconnectedAt = now
 		} else {
 			players[userId] = {
 				username,
 				userId,
 				status: 'disconnected',
-				errorMsg: errorMsg || 'Connection Lost',
+				errorMsg: errorMsg,
 				lastSeen: now,
 				shouldRejoin: false,
 				disconnectedAt: now,
 				timeRemaining: 0,
-				selectedScript: 'none'
+				selectedScript: 'none',
+				firstSeen: now
 			}
 		}
 		
