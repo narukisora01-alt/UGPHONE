@@ -131,6 +131,8 @@ export default async function handler(req, res) {
 	}
 	
 	if (path === '/api/players' && req.method === 'GET') {
+		await cleanupPlayers()
+		
 		const { data: players } = await supabase
 			.from('players')
 			.select('*')
