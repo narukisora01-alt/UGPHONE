@@ -20,7 +20,7 @@
         }
 
         .container {
-            max-width: 1200px;
+            max-width: 1400px;
             margin: 0 auto;
         }
 
@@ -111,7 +111,7 @@
 
         .grid {
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
             gap: 20px;
             min-height: 100px;
         }
@@ -163,11 +163,11 @@
         }
 
         .status-dot.online {
-            background: #fff;
+            background: #0f0;
         }
 
         .status-dot.offline {
-            background: #333;
+            background: #f00;
         }
 
         .card-info h3 {
@@ -193,6 +193,7 @@
             padding: 10px 0;
             border-bottom: 1px solid #1a1a1a;
             font-size: 13px;
+            align-items: center;
         }
 
         .detail:last-child {
@@ -205,6 +206,45 @@
 
         .value {
             color: #fff;
+        }
+
+        .time-display {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .time-badge {
+            background: #222;
+            padding: 4px 12px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+
+        .time-badge.expired {
+            background: #f003;
+            color: #f00;
+        }
+
+        .time-badge.active {
+            background: #0f03;
+            color: #0f0;
+        }
+
+        select {
+            background: #1a1a1a;
+            color: #fff;
+            border: 1px solid #333;
+            border-radius: 4px;
+            padding: 6px 10px;
+            font-size: 12px;
+            cursor: pointer;
+            outline: none;
+        }
+
+        select:hover {
+            border-color: #444;
         }
 
         .btn {
@@ -237,6 +277,24 @@
             cursor: not-allowed;
         }
 
+        .btn-group {
+            display: flex;
+            gap: 10px;
+        }
+
+        .btn-group .btn {
+            flex: 1;
+        }
+
+        .btn-secondary {
+            background: #222;
+            color: #fff;
+        }
+
+        .btn-secondary:hover:not(:disabled) {
+            background: #333;
+        }
+
         .empty {
             text-align: center;
             padding: 60px 20px;
@@ -254,6 +312,32 @@
             font-size: 13px;
         }
 
+        .input-group {
+            display: flex;
+            gap: 8px;
+            margin-top: 10px;
+        }
+
+        input[type="number"] {
+            flex: 1;
+            background: #1a1a1a;
+            color: #fff;
+            border: 1px solid #333;
+            border-radius: 4px;
+            padding: 8px 12px;
+            font-size: 12px;
+            outline: none;
+        }
+
+        input[type="number"]:focus {
+            border-color: #555;
+        }
+
+        .btn-small {
+            padding: 8px 16px;
+            font-size: 11px;
+        }
+
         @keyframes fadeIn {
             to {
                 opacity: 1;
@@ -265,7 +349,7 @@
     <div class="container">
         <div class="header">
             <h1>Player Manager</h1>
-            <p>Real-time monitoring system</p>
+            <p>Real-time monitoring & control system</p>
         </div>
 
         <div class="stats">
@@ -300,7 +384,12 @@
     <script>
         const API = window.location.origin;
         let data = {};
-        let currentCards = { online: new Set(), offline: new Set() };
+
+        function formatTime(seconds) {
+            const mins = Math.floor(seconds / 60);
+            const secs = Math.floor(seconds % 60);
+            return `${mins}m ${secs}s`;
+        }
 
         async function load() {
             try {
@@ -314,13 +403,15 @@
                 const json = await res.json();
                 data = json.players || {};
                 render();
-            } catch (e) {}
+            } catch (e) {
+                console.error('Load error:', e);
+            }
         }
 
         function render() {
             const all = Object.entries(data);
             const online = all.filter(([_, p]) => p.status === 'online');
-            const offline = all.filter(([_, p]) => p.status === 'disconnected' && p.errorMsg !== 'Connection Timeout');
+            const offline = all.filter(([_, p]) => p.status === 'disconnected');
 
             document.getElementById('onlineCount').textContent = online.length;
             document.getElementById('offlineCount').textContent = offline.length;
@@ -332,7 +423,6 @@
 
         function renderGrid(id, arr, type) {
             const grid = document.getElementById(id);
-            const newCards = new Set(arr.map(([userId]) => userId));
             
             if (arr.length === 0) {
                 grid.innerHTML = `
@@ -341,31 +431,14 @@
                         <p>${type === 'online' ? 'Waiting for connections' : 'No disconnections'}</p>
                     </div>
                 `;
-                currentCards[type].clear();
                 return;
             }
-
-            const hasChanged = currentCards[type].size !== newCards.size || 
-                              ![...newCards].every(id => currentCards[type].has(id));
-            
-            if (!hasChanged) {
-                arr.forEach(([userId, p]) => {
-                    const statusEl = document.querySelector(`#status-${userId}`);
-                    if (statusEl) {
-                        statusEl.textContent = p.shouldRejoin ? 'Rejoin sent' : type;
-                    }
-                    const btnEl = document.querySelector(`#btn-${userId}`);
-                    if (btnEl && type === 'offline') {
-                        btnEl.disabled = p.shouldRejoin;
-                        btnEl.textContent = p.shouldRejoin ? 'Rejoin sent' : 'Rejoin';
-                    }
-                });
-                return;
-            }
-            
-            currentCards[type] = newCards;
 
             grid.innerHTML = arr.map(([userId, p]) => {
+                const timeRemaining = p.timeRemaining || 0;
+                const hasTime = timeRemaining > 0;
+                const timeClass = hasTime ? 'active' : 'expired';
+                
                 return `
                     <div class="card">
                         <div class="card-header">
@@ -375,13 +448,30 @@
                             </div>
                             <div class="card-info">
                                 <h3>${p.username}</h3>
-                                <div class="status" id="status-${userId}">${p.shouldRejoin ? 'Rejoin sent' : type}</div>
+                                <div class="status">${p.shouldRejoin ? 'Rejoin sent' : type}</div>
                             </div>
                         </div>
                         <div class="details">
                             <div class="detail">
                                 <span class="label">User ID</span>
                                 <span class="value">${userId}</span>
+                            </div>
+                            <div class="detail">
+                                <span class="label">Time</span>
+                                <div class="time-display">
+                                    <span class="time-badge ${timeClass}">${formatTime(timeRemaining)}</span>
+                                    <div class="input-group">
+                                        <input type="number" id="time-${userId}" placeholder="Minutes" min="0" value="10">
+                                        <button class="btn btn-small" onclick="addTime('${userId}')">Add</button>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="detail">
+                                <span class="label">Script</span>
+                                <select id="script-${userId}" onchange="updateScript('${userId}')">
+                                    <option value="none" ${p.selectedScript === 'none' ? 'selected' : ''}>None</option>
+                                    <option value="atlas" ${p.selectedScript === 'atlas' ? 'selected' : ''}>Atlas BSS</option>
+                                </select>
                             </div>
                             ${p.errorMsg ? `
                             <div class="detail">
@@ -391,13 +481,60 @@
                             ` : ''}
                         </div>
                         ${type === 'offline' ? `
-                        <button class="btn" id="btn-${userId}" onclick="rejoin('${userId}')" ${p.shouldRejoin ? 'disabled' : ''}>
+                        <button class="btn" onclick="rejoin('${userId}')" ${p.shouldRejoin ? 'disabled' : ''}>
                             ${p.shouldRejoin ? 'Rejoin sent' : 'Rejoin'}
                         </button>
                         ` : ''}
                     </div>
                 `;
             }).join('');
+        }
+
+        async function addTime(userId) {
+            const input = document.getElementById(`time-${userId}`);
+            const minutes = parseInt(input.value) || 0;
+            
+            if (minutes <= 0) {
+                alert('Please enter a valid number of minutes');
+                return;
+            }
+            
+            try {
+                const res = await fetch(`${API}/api/update-time`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        userId, 
+                        timeToAdd: minutes * 60 
+                    })
+                });
+                const json = await res.json();
+                if (json.success) {
+                    input.value = '10';
+                    await load();
+                }
+            } catch (e) {
+                console.error('Add time error:', e);
+            }
+        }
+
+        async function updateScript(userId) {
+            const select = document.getElementById(`script-${userId}`);
+            const script = select.value;
+            
+            try {
+                const res = await fetch(`${API}/api/update-script`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ userId, script })
+                });
+                const json = await res.json();
+                if (json.success) {
+                    await load();
+                }
+            } catch (e) {
+                console.error('Update script error:', e);
+            }
         }
 
         async function rejoin(userId) {
@@ -409,10 +546,11 @@
                 });
                 const json = await res.json();
                 if (json.success) {
-                    data[userId].shouldRejoin = true;
-                    render();
+                    await load();
                 }
-            } catch (e) {}
+            } catch (e) {
+                console.error('Rejoin error:', e);
+            }
         }
 
         load();
