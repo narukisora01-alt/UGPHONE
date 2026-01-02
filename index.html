@@ -39,6 +39,7 @@
         .status-dot { position: absolute; bottom: -2px; right: -2px; width: 14px; height: 14px; border-radius: 50%; border: 2px solid #111; }
         .status-dot.online { background: #0f0; }
         .status-dot.offline { background: #f00; }
+        .status-dot.rejoining { background: #ff0; animation: pulse 1s infinite; }
         .card-info h3 { font-size: 18px; font-weight: 400; margin-bottom: 5px; }
         .status { font-size: 11px; color: #666; text-transform: uppercase; letter-spacing: 1px; }
         .details { margin-bottom: 20px; }
@@ -56,6 +57,7 @@
         .btn:hover:not(:disabled) { background: #e0e0e0; transform: scale(1.02); }
         .btn:active { transform: scale(0.98); }
         .btn:disabled { background: #222; color: #666; cursor: not-allowed; }
+        .btn.rejoining { background: #ff0; color: #000; }
         .empty { text-align: center; padding: 60px 20px; color: #666; grid-column: 1 / -1; }
         .empty h3 { font-size: 18px; font-weight: 400; margin-bottom: 8px; }
         .empty p { font-size: 13px; }
@@ -95,6 +97,7 @@
         let isAuthenticated = false;
         let refreshInterval = null;
         let isUpdating = false;
+        let pendingRejoins = new Set();
 
         async function authenticate() {
             const input = document.getElementById('authInput');
@@ -186,6 +189,13 @@
                 const res = await fetch(`${API}/api/players`, { cache: 'no-cache', headers: { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' } });
                 const json = await res.json();
                 data = json.players || {};
+                
+                for (const userId of pendingRejoins) {
+                    if (data[userId] && data[userId].status === 'online' && !data[userId].shouldRejoin) {
+                        pendingRejoins.delete(userId);
+                    }
+                }
+                
                 render();
             } catch (e) {}
         }
@@ -214,8 +224,9 @@
                 const timeRemaining = p.timeRemaining || 0;
                 const hasTime = timeRemaining > 0;
                 const timeClass = hasTime ? 'active' : 'expired';
-                const statusDot = p.status === 'online' ? 'online' : 'offline';
-                return `<div class="card"><div class="card-header"><div class="avatar">${p.username[0].toUpperCase()}<div class="status-dot ${statusDot}"></div></div><div class="card-info"><h3>${p.username}</h3><div class="status">${p.status}</div></div></div><div class="details"><div class="detail"><span class="label">User ID</span><span class="value">${userId}</span></div><div class="detail"><span class="label">Time</span><div class="time-display"><span class="time-badge ${timeClass}">${formatTime(timeRemaining)}</span><div class="input-group"><input type="number" id="time-${userId}" placeholder="10" min="1" value="10"><select class="time-unit-select" id="unit-${userId}"><option value="minutes">Min</option><option value="hours">Hours</option><option value="days">Days</option></select><button class="btn btn-small" onclick="addTime('${userId}')">Add</button></div></div></div><div class="detail"><span class="label">Script</span><select id="script-${userId}" onchange="updateScript('${userId}')"><option value="none" ${p.selectedScript === 'none' ? 'selected' : ''}>None</option><option value="atlas" ${p.selectedScript === 'atlas' ? 'selected' : ''}>Atlas BSS</option></select></div></div></div>`;
+                const isRejoining = p.shouldRejoin || pendingRejoins.has(userId);
+                const statusDot = isRejoining ? 'rejoining' : (p.status === 'online' ? 'online' : 'offline');
+                return `<div class="card"><div class="card-header"><div class="avatar">${p.username[0].toUpperCase()}<div class="status-dot ${statusDot}"></div></div><div class="card-info"><h3>${p.username}</h3><div class="status">${isRejoining ? 'rejoining' : p.status}</div></div></div><div class="details"><div class="detail"><span class="label">User ID</span><span class="value">${userId}</span></div><div class="detail"><span class="label">Time</span><div class="time-display"><span class="time-badge ${timeClass}">${formatTime(timeRemaining)}</span><div class="input-group"><input type="number" id="time-${userId}" placeholder="10" min="1" value="10"><select class="time-unit-select" id="unit-${userId}"><option value="minutes">Min</option><option value="hours">Hours</option><option value="days">Days</option></select><button class="btn btn-small" onclick="addTime('${userId}')">Add</button></div></div></div><div class="detail"><span class="label">Script</span><select id="script-${userId}" onchange="updateScript('${userId}')"><option value="none" ${p.selectedScript === 'none' ? 'selected' : ''}>None</option><option value="atlas" ${p.selectedScript === 'atlas' ? 'selected' : ''}>Atlas BSS</option></select></div></div></div>`;
             }).join('');
         }
 
@@ -227,10 +238,14 @@
                 return;
             }
             grid.innerHTML = arr.map(([userId, p]) => {
-                const statusDot = type;
-                const showButton = type !== 'online';
+                const isRejoining = p.shouldRejoin || pendingRejoins.has(userId);
+                const statusDot = isRejoining ? 'rejoining' : type;
+                const showButton = type !== 'online' && !isRejoining;
+                const buttonClass = isRejoining ? 'btn rejoining' : 'btn';
+                const buttonText = isRejoining ? 'Rejoining...' : 'Rejoin';
+                const buttonDisabled = isRejoining ? 'disabled' : '';
                 
-                return `<div class="card"><div class="card-header"><div class="avatar">${p.username[0].toUpperCase()}<div class="status-dot ${statusDot}"></div></div><div class="card-info"><h3>${p.username}</h3><div class="status">${type}</div></div></div><div class="details"><div class="detail"><span class="label">User ID</span><span class="value">${userId}</span></div>${p.errorMsg ? `<div class="detail"><span class="label">Error</span><span class="value">${p.errorMsg}</span></div>` : ''}</div>${showButton ? `<button class="btn" onclick="rejoin('${userId}')">Rejoin</button>` : ''}</div>`;
+                return `<div class="card"><div class="card-header"><div class="avatar">${p.username[0].toUpperCase()}<div class="status-dot ${statusDot}"></div></div><div class="card-info"><h3>${p.username}</h3><div class="status">${isRejoining ? 'rejoining' : type}</div></div></div><div class="details"><div class="detail"><span class="label">User ID</span><span class="value">${userId}</span></div>${p.errorMsg ? `<div class="detail"><span class="label">Error</span><span class="value">${p.errorMsg}</span></div>` : ''}</div>${showButton || isRejoining ? `<button class="${buttonClass}" onclick="rejoin('${userId}')" ${buttonDisabled}>${buttonText}</button>` : ''}</div>`;
             }).join('');
         }
 
@@ -274,33 +289,39 @@
             } catch (e) {}
         }
 
-async function rejoin(userId) {
-    // 1. Disable the button immediately so the user knows it's working
-    const btn = event.target;
-    const originalText = btn.textContent;
-    btn.disabled = true;
-    btn.textContent = 'Processing...';
-    
-    // 2. Stop the auto-refresh from overwriting our UI
-    isUpdating = true; 
+        async function rejoin(userId) {
+            if (pendingRejoins.has(userId)) return;
+            
+            pendingRejoins.add(userId);
+            pauseRefresh(10000);
+            render();
 
-    try {
-        const res = await fetch(`${API}/api/rejoin`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ userId })
-        });
-        const json = await res.json();
-        if (json.success) {
-            await load(); // Fetch fresh data
+            try {
+                const res = await fetch(`${API}/api/rejoin`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ userId })
+                });
+                const json = await res.json();
+                
+                if (json.success) {
+                    await load();
+                    setTimeout(async () => {
+                        await load();
+                        if (data[userId] && data[userId].status === 'online' && !data[userId].shouldRejoin) {
+                            pendingRejoins.delete(userId);
+                            render();
+                        }
+                    }, 3000);
+                } else {
+                    pendingRejoins.delete(userId);
+                    render();
+                }
+            } catch (e) {
+                pendingRejoins.delete(userId);
+                render();
+            }
         }
-    } catch (e) {
-        console.error("Rejoin failed:", e);
-    } finally {
-        // 3. Re-enable updates
-        isUpdating = false;
-    }
-}
     </script>
 </body>
 </html>
