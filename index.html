@@ -66,6 +66,10 @@
         input[type="number"]:focus { border-color: #555; }
         .time-unit-select { background: #1a1a1a; color: #fff; border: 1px solid #333; border-radius: 4px; padding: 8px; font-size: 11px; cursor: pointer; outline: none; }
         .btn-small { padding: 8px 16px; font-size: 11px; width: auto; }
+        .stats-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px; }
+        .stat-item { background: #1a1a1a; padding: 8px 12px; border-radius: 4px; display: flex; flex-direction: column; gap: 2px; }
+        .stat-item .stat-label { font-size: 10px; color: #666; text-transform: uppercase; letter-spacing: 0.5px; }
+        .stat-item .stat-value { font-size: 14px; color: #fff; font-weight: 500; }
         @keyframes fadeIn { to { opacity: 1; } }
     </style>
 </head>
@@ -98,6 +102,13 @@
         let refreshInterval = null;
         let isUpdating = false;
         let pendingRejoins = new Set();
+
+        function formatNumber(num) {
+            if (num >= 1e9) return (num / 1e9).toFixed(1) + 'B';
+            if (num >= 1e6) return (num / 1e6).toFixed(1) + 'M';
+            if (num >= 1e3) return (num / 1e3).toFixed(1) + 'K';
+            return num.toString();
+        }
 
         async function authenticate() {
             const input = document.getElementById('authInput');
@@ -226,7 +237,7 @@
                 const timeClass = hasTime ? 'active' : 'expired';
                 const isRejoining = p.shouldRejoin || pendingRejoins.has(userId);
                 const statusDot = isRejoining ? 'rejoining' : (p.status === 'online' ? 'online' : 'offline');
-                return `<div class="card"><div class="card-header"><div class="avatar">${p.username[0].toUpperCase()}<div class="status-dot ${statusDot}"></div></div><div class="card-info"><h3>${p.username}</h3><div class="status">${isRejoining ? 'rejoining' : p.status}</div></div></div><div class="details"><div class="detail"><span class="label">User ID</span><span class="value">${userId}</span></div><div class="detail"><span class="label">Time</span><div class="time-display"><span class="time-badge ${timeClass}">${formatTime(timeRemaining)}</span><div class="input-group"><input type="number" id="time-${userId}" placeholder="10" min="1" value="10"><select class="time-unit-select" id="unit-${userId}"><option value="minutes">Min</option><option value="hours">Hours</option><option value="days">Days</option></select><button class="btn btn-small" onclick="addTime('${userId}')">Add</button></div></div></div><div class="detail"><span class="label">Script</span><select id="script-${userId}" onchange="updateScript('${userId}')"><option value="none" ${p.selectedScript === 'none' ? 'selected' : ''}>None</option><option value="atlas" ${p.selectedScript === 'atlas' ? 'selected' : ''}>Atlas BSS</option></select></div></div></div>`;
+                return `<div class="card"><div class="card-header"><div class="avatar">${p.username[0].toUpperCase()}<div class="status-dot ${statusDot}"></div></div><div class="card-info"><h3>${p.username}</h3><div class="status">${isRejoining ? 'rejoining' : p.status}</div></div></div><div class="details"><div class="stats-row"><div class="stat-item"><div class="stat-label">Honey</div><div class="stat-value">${formatNumber(p.honey || 0)}</div></div><div class="stat-item"><div class="stat-label">Pollen</div><div class="stat-value">${formatNumber(p.pollen || 0)}</div></div></div><div class="detail"><span class="label">User ID</span><span class="value">${userId}</span></div><div class="detail"><span class="label">Time</span><div class="time-display"><span class="time-badge ${timeClass}">${formatTime(timeRemaining)}</span><div class="input-group"><input type="number" id="time-${userId}" placeholder="10" min="1" value="10"><select class="time-unit-select" id="unit-${userId}"><option value="minutes">Min</option><option value="hours">Hours</option><option value="days">Days</option></select><button class="btn btn-small" onclick="addTime('${userId}')">Add</button></div></div></div><div class="detail"><span class="label">Script</span><select id="script-${userId}" onchange="updateScript('${userId}')"><option value="none" ${p.selectedScript === 'none' ? 'selected' : ''}>None</option><option value="atlas" ${p.selectedScript === 'atlas' ? 'selected' : ''}>Atlas BSS</option></select></div></div></div>`;
             }).join('');
         }
 
@@ -245,7 +256,7 @@
                 const buttonText = isRejoining ? 'Rejoining...' : 'Rejoin';
                 const buttonDisabled = isRejoining ? 'disabled' : '';
                 
-                return `<div class="card"><div class="card-header"><div class="avatar">${p.username[0].toUpperCase()}<div class="status-dot ${statusDot}"></div></div><div class="card-info"><h3>${p.username}</h3><div class="status">${isRejoining ? 'rejoining' : type}</div></div></div><div class="details"><div class="detail"><span class="label">User ID</span><span class="value">${userId}</span></div>${p.errorMsg ? `<div class="detail"><span class="label">Error</span><span class="value">${p.errorMsg}</span></div>` : ''}</div>${showButton || isRejoining ? `<button class="${buttonClass}" onclick="rejoin('${userId}')" ${buttonDisabled}>${buttonText}</button>` : ''}</div>`;
+                return `<div class="card"><div class="card-header"><div class="avatar">${p.username[0].toUpperCase()}<div class="status-dot ${statusDot}"></div></div><div class="card-info"><h3>${p.username}</h3><div class="status">${isRejoining ? 'rejoining' : type}</div></div></div><div class="details"><div class="stats-row"><div class="stat-item"><div class="stat-label">Honey</div><div class="stat-value">${formatNumber(p.honey || 0)}</div></div><div class="stat-item"><div class="stat-label">Pollen</div><div class="stat-value">${formatNumber(p.pollen || 0)}</div></div></div><div class="detail"><span class="label">User ID</span><span class="value">${userId}</span></div>${p.errorMsg ? `<div class="detail"><span class="label">Error</span><span class="value">${p.errorMsg}</span></div>` : ''}</div>${showButton || isRejoining ? `<button class="${buttonClass}" onclick="rejoin('${userId}')" ${buttonDisabled}>${buttonText}</button>` : ''}</div>`;
             }).join('');
         }
 
