@@ -73,10 +73,8 @@ export default async function handler(req, res) {
 		}
 	}
 
-	/* ================= HEARTBEAT ================= */
-
 	if (path === '/api/heartbeat' && req.method === 'POST') {
-		const { username, userId } = body
+		const { username, userId, honey, pollen } = body
 		if (!username || !userId) return res.status(400).json({ error: 'Missing fields' })
 
 		const { data: existing } = await supabase
@@ -95,7 +93,9 @@ export default async function handler(req, res) {
 				selected_script: 'none',
 				last_seen: now,
 				last_time_update: now,
-				first_seen: now
+				first_seen: now,
+				honey: honey || 0,
+				pollen: pollen || 0
 			})
 			return res.json({ success: true, shouldRejoin: false })
 		}
@@ -109,7 +109,9 @@ export default async function handler(req, res) {
 			last_time_update: now,
 			time_remaining: newTime,
 			error_msg: null,
-			disconnected_at: null
+			disconnected_at: null,
+			honey: honey || existing.honey || 0,
+			pollen: pollen || existing.pollen || 0
 		}).eq('user_id', userId)
 
 		return res.json({
@@ -117,8 +119,6 @@ export default async function handler(req, res) {
 			shouldRejoin: existing.should_rejoin
 		})
 	}
-
-	/* ================= PLAYERS ================= */
 
 	if (path === '/api/players' && req.method === 'GET') {
 		await cleanupPlayers()
@@ -141,22 +141,20 @@ export default async function handler(req, res) {
 				lastTimeUpdate: p.last_time_update,
 				firstSeen: p.first_seen,
 				errorMsg: p.error_msg,
-				disconnectedAt: p.disconnected_at
+				disconnectedAt: p.disconnected_at,
+				honey: p.honey || 0,
+				pollen: p.pollen || 0
 			}
 		}
 
 		return res.json({ players: out })
 	}
 
-	/* ================= AUTH ================= */
-
 	if (path === '/api/auth' && req.method === 'POST') {
 		return body.key === AUTH_KEY
 			? res.json({ success: true })
 			: res.status(401).json({ error: 'Invalid key' })
 	}
-
-	/* ================= REJOIN ================= */
 
 	if (path === '/api/rejoin' && req.method === 'POST') {
 		const { userId } = body
@@ -184,8 +182,6 @@ export default async function handler(req, res) {
 
 		return res.json({ success: true })
 	}
-
-	/* ================= REPORT ================= */
 
 	if (path === '/api/report' && req.method === 'POST') {
 		const { username, userId, errorMsg } = body
@@ -220,14 +216,14 @@ export default async function handler(req, res) {
 				disconnected_at: now,
 				time_remaining: 0,
 				selected_script: 'none',
-				first_seen: now
+				first_seen: now,
+				honey: 0,
+				pollen: 0
 			})
 		}
 
 		return res.json({ success: true })
 	}
-
-	/* ================= UPDATE TIME ================= */
 
 	if (path === '/api/update-time' && req.method === 'POST') {
 		const { userId, timeToAdd } = body
@@ -253,8 +249,6 @@ export default async function handler(req, res) {
 		return res.json({ success: true, timeRemaining: newTime })
 	}
 
-	/* ================= UPDATE SCRIPT ================= */
-
 	if (path === '/api/update-script' && req.method === 'POST') {
 		const { userId, script } = body
 		if (!userId || !script) return res.status(400).json({ error: 'Missing fields' })
@@ -265,8 +259,6 @@ export default async function handler(req, res) {
 
 		return res.json({ success: true })
 	}
-
-	/* ================= SCRIPT ================= */
 
 	if (path === '/api/script' && req.method === 'GET') {
 		const { data } = await supabase
