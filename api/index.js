@@ -193,7 +193,9 @@ export default async function handler(req, res) {
 				username: p.username,
 				userId: p.user_id,
 				honey: p.honey || 0,
-				pollen: p.pollen || 0
+				pollen: p.pollen || 0,
+				status: p.status,
+				errorMsg: p.error_msg
 			}))
 			
 			const keysFormatted = (allKeys || []).map(k => ({
@@ -235,7 +237,9 @@ export default async function handler(req, res) {
 				username: p.username,
 				userId: p.user_id,
 				honey: p.honey || 0,
-				pollen: p.pollen || 0
+				pollen: p.pollen || 0,
+				status: p.status,
+				errorMsg: p.error_msg
 			}))
 			
 			return res.json({
@@ -254,7 +258,9 @@ export default async function handler(req, res) {
 			username: p.username,
 			userId: p.user_id,
 			honey: p.honey || 0,
-			pollen: p.pollen || 0
+			pollen: p.pollen || 0,
+			status: p.status,
+			errorMsg: p.error_msg
 		}))
 		
 		const keyTimeRemaining = await calculateKeyTimeRemaining(keyData)
