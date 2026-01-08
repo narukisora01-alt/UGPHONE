@@ -236,7 +236,7 @@
             try {
                 const res = await fetch(`${API}/api/dashboard?key=${encodeURIComponent(userKey)}`);
                 
-                if (res.status === 401) {
+                if (!isAdmin && res.status === 401) {
                     sessionStorage.clear();
                     alert('Your session has expired. Please login again.');
                     location.reload();
