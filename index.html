@@ -25,6 +25,7 @@
         .nav-item:hover { background: #1a1a1a; color: #fff; }
         .nav-item.active { background: #1a1a1a; color: #fff; border-left-color: #fff; }
         .nav-item.admin-only { display: none; }
+        .sidebar-footer { position: absolute; bottom: 0; left: 0; right: 0; padding: 20px; border-top: 1px solid #222; }
         .content { margin-left: 0; margin-top: 60px; padding: 40px; transition: margin-left 0.3s ease; min-height: calc(100vh - 60px); }
         .content.shifted { margin-left: 280px; }
         .page { display: none; animation: fadeIn 0.4s; }
@@ -41,6 +42,8 @@
         .btn:active { transform: scale(0.98); }
         .btn-secondary { background: #222; color: #fff; border: 1px solid #333; }
         .btn-secondary:hover { background: #333; }
+        .btn-logout { width: 100%; background: #f00; color: #fff; }
+        .btn-logout:hover { background: #d00; }
         .card { background: #111; border: 1px solid #222; border-radius: 8px; padding: 25px; margin-bottom: 20px; }
         .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 20px; }
         .key-card { background: #111; border: 1px solid #222; border-radius: 8px; padding: 20px; }
@@ -106,6 +109,9 @@
             <div class="nav-item" onclick="switchPage('players')">Players</div>
             <div class="nav-item admin-only" onclick="switchPage('keys')">Keys</div>
         </div>
+        <div class="sidebar-footer">
+            <button class="btn btn-logout" onclick="logout()">Logout</button>
+        </div>
     </div>
     <div class="content" id="content">
         <div class="page active" id="homePage">
@@ -167,6 +173,7 @@
         let userKey = null;
         let isAdmin = false;
         let sidebarOpen = false;
+        let updateInterval = null;
 
         function toggleSidebar() {
             sidebarOpen = !sidebarOpen;
@@ -181,6 +188,14 @@
             document.getElementById(page + 'Page').classList.add('active');
             event.target.classList.add('active');
             loadData();
+        }
+
+        function logout() {
+            sessionStorage.clear();
+            if (updateInterval) {
+                clearInterval(updateInterval);
+            }
+            location.reload();
         }
 
         async function authenticate() {
@@ -205,24 +220,24 @@
                     userKey = key;
                     isAdmin = data.isAdmin || false;
                     sessionStorage.setItem('userKey', key);
-                    sessionStorage.setItem('isAdmin', isAdmin);
+                    sessionStorage.setItem('isAdmin', isAdmin ? 'true' : 'false');
                     document.getElementById('authOverlay').style.display = 'none';
                     
                     if (isAdmin) {
-                        document.getElementById('userBadge').textContent = 'ADMIN';
+                        document.getElementById('userBadge').innerHTML = 'ADMIN';
                         document.getElementById('userBadge').classList.add('admin');
                         document.querySelectorAll('.admin-only').forEach(el => el.style.display = 'block');
                         document.getElementById('adminStats').style.display = 'grid';
                         document.getElementById('userKeyInfo').style.display = 'none';
                     } else {
-                        document.getElementById('userBadge').textContent = 'USER';
+                        document.getElementById('userBadge').innerHTML = 'USER';
                         document.querySelectorAll('.admin-only').forEach(el => el.style.display = 'none');
                         document.getElementById('adminStats').style.display = 'none';
                         document.getElementById('userKeyInfo').style.display = 'block';
                     }
                     
                     loadData();
-                    setInterval(loadData, 3000);
+                    updateInterval = setInterval(loadData, 3000);
                 } else {
                     errorDiv.textContent = data.message || 'Invalid key or expired';
                     errorDiv.style.display = 'block';
@@ -238,8 +253,11 @@
             try {
                 const res = await fetch(`${API}/api/dashboard?key=${encodeURIComponent(userKey)}`);
                 
-                if (!isAdmin && res.status === 401) {
+                if (res.status === 401) {
                     sessionStorage.clear();
+                    if (updateInterval) {
+                        clearInterval(updateInterval);
+                    }
                     alert('Your session has expired. Please login again.');
                     location.reload();
                     return;
@@ -394,20 +412,20 @@
             document.getElementById('authOverlay').style.display = 'none';
             
             if (isAdmin) {
-                document.getElementById('userBadge').textContent = 'ADMIN';
+                document.getElementById('userBadge').innerHTML = 'ADMIN';
                 document.getElementById('userBadge').classList.add('admin');
                 document.querySelectorAll('.admin-only').forEach(el => el.style.display = 'block');
                 document.getElementById('adminStats').style.display = 'grid';
                 document.getElementById('userKeyInfo').style.display = 'none';
             } else {
-                document.getElementById('userBadge').textContent = 'USER';
+                document.getElementById('userBadge').innerHTML = 'USER';
                 document.querySelectorAll('.admin-only').forEach(el => el.style.display = 'none');
                 document.getElementById('adminStats').style.display = 'none';
                 document.getElementById('userKeyInfo').style.display = 'block';
             }
             
             loadData();
-            setInterval(loadData, 3000);
+            updateInterval = setInterval(loadData, 3000);
         }
 
         document.getElementById('authInput').addEventListener('keypress', function(e) {
