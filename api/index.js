@@ -8,6 +8,15 @@ const supabase = createClient(
 const TIMEOUT_MS = 60000
 const AUTH_KEY = process.env.AUTH_KEY
 
+function generateKey() {
+	const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+	let key = 'CLOUDSYNC_'
+	for (let i = 0; i < 16; i++) {
+		key += chars.charAt(Math.floor(Math.random() * chars.length))
+	}
+	return key
+}
+
 export default async function handler(req, res) {
 	res.setHeader('Access-Control-Allow-Origin', '*')
 	res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
@@ -43,11 +52,7 @@ export default async function handler(req, res) {
 			const updates = {}
 			const lastSeen = p.last_seen || 0
 
-			if (
-				p.status === 'online' &&
-				now - lastSeen > TIMEOUT_MS &&
-				!p.should_rejoin
-			) {
+			if (p.status === 'online' && now - lastSeen > TIMEOUT_MS && !p.should_rejoin) {
 				updates.status = 'disconnected'
 				updates.error_msg = 'Connection Timeout'
 				updates.disconnected_at = now
@@ -73,10 +78,177 @@ export default async function handler(req, res) {
 		}
 	}
 
-	if (path === '/api/heartbeat' && req.method === 'POST') {
-		const { username, userId, honey, pollen } = body
-		if (!username || !userId) return res.status(400).json({ error: 'Missing fields' })
+	async function checkKeyExpiry() {
+		const { data: keys } = await supabase.from('keys').select('*').eq('status', 'active')
+		if (!keys) return
 
+		for (const key of keys) {
+			if (key.expires_at && now > key.expires_at) {
+				await supabase.from('keys').update({ status: 'expired' }).eq('key', key.key)
+				
+				const { data: players } = await supabase.from('players').select('*').eq('access_key', key.key)
+				if (players) {
+					for (const player of players) {
+						await supabase.from('players').update({
+							status: 'disconnected',
+							error_msg: 'Your Key Has Expired!',
+							disconnected_at: now
+						}).eq('user_id', player.user_id)
+					}
+				}
+			}
+		}
+	}
+
+	if (path === '/api/create-key' && req.method === 'POST') {
+		const { adminKey, duration, unit } = body
+		if (adminKey !== AUTH_KEY) return res.status(401).json({ error: 'Unauthorized' })
+		
+		let seconds = duration * 60
+		if (unit === 'hours') seconds = duration * 3600
+		else if (unit === 'days') seconds = duration * 86400
+		
+		const key = generateKey()
+		const durationText = `${duration} ${unit}`
+		
+		await supabase.from('keys').insert({
+			key,
+			status: 'unused',
+			duration: durationText,
+			created_at: now,
+			duration_seconds: seconds
+		})
+		
+		return res.json({ success: true, key })
+	}
+
+	if (path === '/api/validate-key' && req.method === 'POST') {
+		const { key } = body
+		if (!key) return res.status(400).json({ error: 'Missing key' })
+		
+		await checkKeyExpiry()
+		
+		const { data: keyData } = await supabase
+			.from('keys')
+			.select('*')
+			.eq('key', key)
+			.maybeSingle()
+		
+		if (!keyData) return res.json({ success: false })
+		
+		if (keyData.status === 'expired') {
+			return res.json({ success: false, message: 'Key has expired. Please contact the owner.' })
+		}
+		
+		if (keyData.status === 'unused') {
+			await supabase.from('keys').update({
+				status: 'active',
+				used_at: now,
+				expires_at: now + (keyData.duration_seconds * 1000)
+			}).eq('key', key)
+		}
+		
+		return res.json({ success: true, isAdmin: key === AUTH_KEY })
+	}
+
+	if (path === '/api/dashboard' && req.method === 'GET') {
+		const key = req.url.split('key=')[1]
+		if (!key) return res.status(401).json({ error: 'Unauthorized' })
+		
+		await checkKeyExpiry()
+		
+		const isAdmin = key === AUTH_KEY
+		
+		const { data: keyData } = await supabase
+			.from('keys')
+			.select('*')
+			.eq('key', key)
+			.maybeSingle()
+		
+		if (!isAdmin && (!keyData || keyData.status === 'expired')) {
+			return res.status(401).json({ error: 'Invalid or expired key' })
+		}
+		
+		let playersQuery = supabase.from('players').select('*')
+		if (!isAdmin) {
+			playersQuery = playersQuery.eq('access_key', key)
+		}
+		
+		const { data: players } = await playersQuery
+		
+		let keysData = []
+		if (isAdmin) {
+			const { data: allKeys } = await supabase.from('keys').select('*').order('created_at', { ascending: false })
+			keysData = allKeys || []
+		}
+		
+		const playersFormatted = (players || []).map(p => ({
+			username: p.username,
+			userId: p.user_id,
+			honey: p.honey || 0,
+			pollen: p.pollen || 0
+		}))
+		
+		const keysFormatted = keysData.map(k => ({
+			key: k.key,
+			status: k.status,
+			duration: k.duration,
+			usedBy: k.used_by,
+			expiresAt: k.expires_at
+		}))
+		
+		return res.json({
+			totalKeys: keysData.length,
+			activeKeys: keysData.filter(k => k.status === 'active').length,
+			totalPlayers: playersFormatted.length,
+			players: playersFormatted,
+			keys: keysFormatted
+		})
+	}
+
+	if (path === '/api/add-key-time' && req.method === 'POST') {
+		const { adminKey, key, duration, unit } = body
+		if (adminKey !== AUTH_KEY) return res.status(401).json({ error: 'Unauthorized' })
+		
+		let seconds = duration * 60
+		if (unit === 'hours') seconds = duration * 3600
+		else if (unit === 'days') seconds = duration * 86400
+		
+		const { data: keyData } = await supabase
+			.from('keys')
+			.select('*')
+			.eq('key', key)
+			.maybeSingle()
+		
+		if (!keyData) return res.status(404).json({ error: 'Key not found' })
+		
+		const newExpiry = (keyData.expires_at || now) + (seconds * 1000)
+		
+		await supabase.from('keys').update({
+			expires_at: newExpiry,
+			status: 'active',
+			duration_seconds: keyData.duration_seconds + seconds
+		}).eq('key', key)
+		
+		return res.json({ success: true })
+	}
+
+	if (path === '/api/heartbeat' && req.method === 'POST') {
+		const { username, userId, honey, pollen, accessKey } = body
+		if (!username || !userId || !accessKey) return res.status(400).json({ error: 'Missing fields' })
+		
+		await checkKeyExpiry()
+		
+		const { data: keyData } = await supabase
+			.from('keys')
+			.select('*')
+			.eq('key', accessKey)
+			.maybeSingle()
+		
+		if (!keyData || keyData.status === 'expired') {
+			return res.json({ success: false, kick: true, reason: 'Your Key Has Expired!' })
+		}
+		
 		const { data: existing } = await supabase
 			.from('players')
 			.select('*')
@@ -87,16 +259,22 @@ export default async function handler(req, res) {
 			await supabase.from('players').insert({
 				user_id: userId,
 				username,
+				access_key: accessKey,
 				status: 'online',
 				should_rejoin: false,
 				time_remaining: 0,
-				selected_script: 'none',
+				selected_script: 'atlas',
 				last_seen: now,
 				last_time_update: now,
 				first_seen: now,
 				honey: honey || 0,
 				pollen: pollen || 0
 			})
+			
+			await supabase.from('keys').update({
+				used_by: username
+			}).eq('key', accessKey)
+			
 			return res.json({ success: true, shouldRejoin: false })
 		}
 
