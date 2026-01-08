@@ -108,7 +108,14 @@ export default async function handler(req, res) {
 
 	if (path === '/api/create-key' && req.method === 'POST') {
 		const { adminKey, duration, unit } = body
-		if (adminKey !== AUTH_KEY) return res.status(401).json({ error: 'Unauthorized' })
+		
+		if (!adminKey || adminKey !== AUTH_KEY) {
+			return res.status(401).json({ success: false, error: 'Unauthorized' })
+		}
+		
+		if (!duration || !unit) {
+			return res.status(400).json({ success: false, error: 'Missing duration or unit' })
+		}
 		
 		let seconds = duration * 60
 		if (unit === 'hours') seconds = duration * 3600
@@ -117,7 +124,7 @@ export default async function handler(req, res) {
 		const key = generateKey()
 		const durationText = `${duration} ${unit}`
 		
-		await supabase.from('keys').insert({
+		const { error } = await supabase.from('keys').insert({
 			key,
 			status: 'unused',
 			duration: durationText,
@@ -125,12 +132,16 @@ export default async function handler(req, res) {
 			duration_seconds: seconds
 		})
 		
+		if (error) {
+			return res.status(500).json({ success: false, error: 'Failed to create key' })
+		}
+		
 		return res.json({ success: true, key })
 	}
 
 	if (path === '/api/validate-key' && req.method === 'POST') {
 		const { key } = body
-		if (!key) return res.status(400).json({ error: 'Missing key' })
+		if (!key) return res.status(400).json({ success: false, error: 'Missing key' })
 		
 		if (key === AUTH_KEY) {
 			return res.json({ success: true, isAdmin: true })
@@ -144,7 +155,9 @@ export default async function handler(req, res) {
 			.eq('key', key)
 			.maybeSingle()
 		
-		if (!keyData) return res.json({ success: false })
+		if (!keyData) {
+			return res.json({ success: false, message: 'Invalid key' })
+		}
 		
 		if (keyData.status === 'expired') {
 			return res.json({ success: false, message: 'Key has expired. Please contact the owner.' })
@@ -163,11 +176,16 @@ export default async function handler(req, res) {
 
 	if (path === '/api/dashboard' && req.method === 'GET') {
 		const key = req.url.split('key=')[1]
-		if (!key) return res.status(401).json({ error: 'Unauthorized' })
+		
+		if (!key) {
+			return res.status(401).json({ error: 'Unauthorized' })
+		}
 		
 		const isAdmin = key === AUTH_KEY
 		
 		if (isAdmin) {
+			await cleanupPlayers()
+			
 			const { data: players } = await supabase.from('players').select('*')
 			const { data: allKeys } = await supabase.from('keys').select('*').order('created_at', { ascending: false })
 			
@@ -250,7 +268,14 @@ export default async function handler(req, res) {
 
 	if (path === '/api/add-key-time' && req.method === 'POST') {
 		const { adminKey, key, duration, unit } = body
-		if (adminKey !== AUTH_KEY) return res.status(401).json({ error: 'Unauthorized' })
+		
+		if (!adminKey || adminKey !== AUTH_KEY) {
+			return res.status(401).json({ success: false, error: 'Unauthorized' })
+		}
+		
+		if (!key || !duration || !unit) {
+			return res.status(400).json({ success: false, error: 'Missing required fields' })
+		}
 		
 		let seconds = duration * 60
 		if (unit === 'hours') seconds = duration * 3600
@@ -262,22 +287,32 @@ export default async function handler(req, res) {
 			.eq('key', key)
 			.maybeSingle()
 		
-		if (!keyData) return res.status(404).json({ error: 'Key not found' })
+		if (!keyData) {
+			return res.status(404).json({ success: false, error: 'Key not found' })
+		}
 		
 		const newExpiry = (keyData.expires_at || now) + (seconds * 1000)
+		const newDurationSeconds = keyData.duration_seconds + seconds
 		
-		await supabase.from('keys').update({
+		const { error } = await supabase.from('keys').update({
 			expires_at: newExpiry,
 			status: 'active',
-			duration_seconds: keyData.duration_seconds + seconds
+			duration_seconds: newDurationSeconds
 		}).eq('key', key)
+		
+		if (error) {
+			return res.status(500).json({ success: false, error: 'Failed to update key' })
+		}
 		
 		return res.json({ success: true })
 	}
 
 	if (path === '/api/heartbeat' && req.method === 'POST') {
 		const { username, userId, honey, pollen, accessKey } = body
-		if (!username || !userId || !accessKey) return res.status(400).json({ error: 'Missing fields' })
+		
+		if (!username || !userId || !accessKey) {
+			return res.status(400).json({ success: false, error: 'Missing fields' })
+		}
 		
 		await checkKeyExpiry()
 		
@@ -373,12 +408,12 @@ export default async function handler(req, res) {
 	if (path === '/api/auth' && req.method === 'POST') {
 		return body.key === AUTH_KEY
 			? res.json({ success: true })
-			: res.status(401).json({ error: 'Invalid key' })
+			: res.status(401).json({ success: false, error: 'Invalid key' })
 	}
 
 	if (path === '/api/rejoin' && req.method === 'POST') {
 		const { userId } = body
-		if (!userId) return res.status(400).json({ error: 'Missing userId' })
+		if (!userId) return res.status(400).json({ success: false, error: 'Missing userId' })
 
 		await supabase.from('players').update({
 			should_rejoin: true,
@@ -390,7 +425,7 @@ export default async function handler(req, res) {
 
 	if (path === '/api/rejoin-complete' && req.method === 'POST') {
 		const { userId } = body
-		if (!userId) return res.status(400).json({ error: 'Missing userId' })
+		if (!userId) return res.status(400).json({ success: false, error: 'Missing userId' })
 
 		await supabase.from('players').update({
 			should_rejoin: false,
@@ -405,7 +440,7 @@ export default async function handler(req, res) {
 
 	if (path === '/api/report' && req.method === 'POST') {
 		const { username, userId, errorMsg } = body
-		if (!username || !userId) return res.status(400).json({ error: 'Missing fields' })
+		if (!username || !userId) return res.status(400).json({ success: false, error: 'Missing fields' })
 
 		const { data: existing } = await supabase
 			.from('players')
@@ -447,8 +482,9 @@ export default async function handler(req, res) {
 
 	if (path === '/api/update-time' && req.method === 'POST') {
 		const { userId, timeToAdd } = body
-		if (!userId || typeof timeToAdd !== 'number')
-			return res.status(400).json({ error: 'Missing fields' })
+		if (!userId || typeof timeToAdd !== 'number') {
+			return res.status(400).json({ success: false, error: 'Missing fields' })
+		}
 
 		const { data: player } = await supabase
 			.from('players')
@@ -456,7 +492,7 @@ export default async function handler(req, res) {
 			.eq('user_id', userId)
 			.maybeSingle()
 
-		if (!player) return res.status(404).json({ error: 'Player not found' })
+		if (!player) return res.status(404).json({ success: false, error: 'Player not found' })
 
 		const current = await calculateCurrentTime(player)
 		const newTime = Math.max(0, current + timeToAdd)
@@ -471,7 +507,7 @@ export default async function handler(req, res) {
 
 	if (path === '/api/update-script' && req.method === 'POST') {
 		const { userId, script } = body
-		if (!userId || !script) return res.status(400).json({ error: 'Missing fields' })
+		if (!userId || !script) return res.status(400).json({ success: false, error: 'Missing fields' })
 
 		await supabase.from('players')
 			.update({ selected_script: script })
