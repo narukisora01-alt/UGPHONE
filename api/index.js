@@ -44,6 +44,12 @@ export default async function handler(req, res) {
 		return Math.max(0, player.time_remaining - elapsed)
 	}
 
+	async function calculateKeyTimeRemaining(key) {
+		if (!key || !key.expires_at) return 0
+		const remaining = (key.expires_at - now) / 1000
+		return Math.max(0, remaining)
+	}
+
 	async function cleanupPlayers() {
 		const { data: players } = await supabase.from('players').select('*')
 		if (!players) return
@@ -126,6 +132,10 @@ export default async function handler(req, res) {
 		const { key } = body
 		if (!key) return res.status(400).json({ error: 'Missing key' })
 		
+		if (key === AUTH_KEY) {
+			return res.json({ success: true, isAdmin: true })
+		}
+		
 		await checkKeyExpiry()
 		
 		const { data: keyData } = await supabase
@@ -148,7 +158,7 @@ export default async function handler(req, res) {
 			}).eq('key', key)
 		}
 		
-		return res.json({ success: true, isAdmin: key === AUTH_KEY })
+		return res.json({ success: true, isAdmin: false })
 	}
 
 	if (path === '/api/dashboard' && req.method === 'GET') {
@@ -159,28 +169,39 @@ export default async function handler(req, res) {
 		
 		const isAdmin = key === AUTH_KEY
 		
-		const { data: keyData } = await supabase
-			.from('keys')
-			.select('*')
-			.eq('key', key)
-			.maybeSingle()
-		
-		if (!isAdmin && (!keyData || keyData.status === 'expired')) {
-			return res.status(401).json({ error: 'Invalid or expired key' })
-		}
-		
-		let playersQuery = supabase.from('players').select('*')
 		if (!isAdmin) {
-			playersQuery = playersQuery.eq('access_key', key)
+			const { data: keyData } = await supabase
+				.from('keys')
+				.select('*')
+				.eq('key', key)
+				.maybeSingle()
+			
+			if (!keyData || keyData.status === 'expired') {
+				return res.status(401).json({ error: 'Invalid or expired key' })
+			}
+			
+			const { data: players } = await supabase
+				.from('players')
+				.select('*')
+				.eq('access_key', key)
+			
+			const playersFormatted = (players || []).map(p => ({
+				username: p.username,
+				userId: p.user_id,
+				honey: p.honey || 0,
+				pollen: p.pollen || 0
+			}))
+			
+			const keyTimeRemaining = await calculateKeyTimeRemaining(keyData)
+			
+			return res.json({
+				players: playersFormatted,
+				keyTimeRemaining
+			})
 		}
 		
-		const { data: players } = await playersQuery
-		
-		let keysData = []
-		if (isAdmin) {
-			const { data: allKeys } = await supabase.from('keys').select('*').order('created_at', { ascending: false })
-			keysData = allKeys || []
-		}
+		const { data: players } = await supabase.from('players').select('*')
+		const { data: allKeys } = await supabase.from('keys').select('*').order('created_at', { ascending: false })
 		
 		const playersFormatted = (players || []).map(p => ({
 			username: p.username,
@@ -189,7 +210,7 @@ export default async function handler(req, res) {
 			pollen: p.pollen || 0
 		}))
 		
-		const keysFormatted = keysData.map(k => ({
+		const keysFormatted = (allKeys || []).map(k => ({
 			key: k.key,
 			status: k.status,
 			duration: k.duration,
@@ -198,8 +219,8 @@ export default async function handler(req, res) {
 		}))
 		
 		return res.json({
-			totalKeys: keysData.length,
-			activeKeys: keysData.filter(k => k.status === 'active').length,
+			totalKeys: keysFormatted.length,
+			activeKeys: keysFormatted.filter(k => k.status === 'active').length,
 			totalPlayers: playersFormatted.length,
 			players: playersFormatted,
 			keys: keysFormatted
