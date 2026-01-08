@@ -14,12 +14,15 @@
         .menu-btn.active span:nth-child(2) { opacity: 0; }
         .menu-btn.active span:nth-child(3) { transform: rotate(-45deg) translate(7px, -6px); }
         .logo { font-size: 20px; font-weight: 600; margin-left: 20px; letter-spacing: -0.5px; }
+        .user-badge { margin-left: auto; background: #222; padding: 8px 16px; border-radius: 6px; font-size: 12px; color: #666; }
+        .user-badge.admin { background: #ff03; color: #ff0; }
         .sidebar { position: fixed; top: 60px; left: -280px; width: 280px; height: calc(100vh - 60px); background: #111; border-right: 1px solid #222; transition: left 0.3s ease; z-index: 999; }
         .sidebar.open { left: 0; }
         .sidebar-nav { padding: 20px 0; }
         .nav-item { padding: 16px 30px; color: #666; cursor: pointer; transition: all 0.3s; border-left: 3px solid transparent; }
         .nav-item:hover { background: #1a1a1a; color: #fff; }
         .nav-item.active { background: #1a1a1a; color: #fff; border-left-color: #fff; }
+        .nav-item.admin-only { display: none; }
         .content { margin-left: 0; margin-top: 60px; padding: 40px; transition: margin-left 0.3s ease; min-height: calc(100vh - 60px); }
         .content.shifted { margin-left: 280px; }
         .page { display: none; animation: fadeIn 0.4s; }
@@ -37,8 +40,6 @@
         .btn-secondary { background: #222; color: #fff; border: 1px solid #333; }
         .btn-secondary:hover { background: #333; }
         .card { background: #111; border: 1px solid #222; border-radius: 8px; padding: 25px; margin-bottom: 20px; }
-        .card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding-bottom: 20px; border-bottom: 1px solid #1a1a1a; }
-        .card-title { font-size: 18px; font-weight: 400; }
         .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 20px; }
         .key-card { background: #111; border: 1px solid #222; border-radius: 8px; padding: 20px; }
         .key-code { background: #1a1a1a; padding: 12px; border-radius: 4px; font-family: monospace; font-size: 13px; margin: 10px 0; word-break: break-all; }
@@ -69,14 +70,20 @@
         .auth-box { background: #111; border: 1px solid #222; border-radius: 12px; padding: 40px; max-width: 400px; width: 90%; text-align: center; }
         .auth-input { width: 100%; background: #1a1a1a; color: #fff; border: 1px solid #333; border-radius: 6px; padding: 14px; font-size: 14px; margin: 20px 0; outline: none; }
         .empty { text-align: center; padding: 60px 20px; color: #666; }
+        .key-info-card { background: #111; border: 1px solid #222; border-radius: 8px; padding: 30px; margin-bottom: 30px; }
+        .key-info-title { font-size: 14px; color: #666; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 15px; }
+        .key-display { background: #1a1a1a; padding: 20px; border-radius: 6px; font-family: monospace; font-size: 16px; text-align: center; margin-bottom: 20px; word-break: break-all; }
+        .time-remaining { font-size: 32px; font-weight: 300; text-align: center; margin: 20px 0; }
+        .time-label { font-size: 12px; color: #666; text-align: center; text-transform: uppercase; letter-spacing: 1px; }
+        .expired-message { background: #f003; color: #f00; padding: 20px; border-radius: 6px; text-align: center; margin-top: 20px; }
     </style>
 </head>
 <body>
     <div class="auth-overlay" id="authOverlay">
         <div class="auth-box">
-            <h2 style="font-size: 24px; margin-bottom: 10px;">Admin Authorization</h2>
-            <p style="color: #666; font-size: 13px; margin-bottom: 20px;">Enter your key to access the dashboard</p>
-            <input type="password" class="auth-input" id="authInput" placeholder="Enter your key">
+            <h2 style="font-size: 24px; margin-bottom: 10px;">CloudSync Access</h2>
+            <p style="color: #666; font-size: 13px; margin-bottom: 20px;">Enter your admin password or user key</p>
+            <input type="password" class="auth-input" id="authInput" placeholder="Enter password or key">
             <button class="btn" onclick="authenticate()">Access Dashboard</button>
         </div>
     </div>
@@ -87,19 +94,32 @@
             <span></span>
         </button>
         <div class="logo">CloudSync</div>
+        <div class="user-badge" id="userBadge"></div>
     </div>
     <div class="sidebar" id="sidebar">
         <div class="sidebar-nav">
             <div class="nav-item active" onclick="switchPage('home')">Home</div>
             <div class="nav-item" onclick="switchPage('players')">Players</div>
-            <div class="nav-item" onclick="switchPage('keys')">Keys</div>
+            <div class="nav-item admin-only" onclick="switchPage('keys')">Keys</div>
         </div>
     </div>
     <div class="content" id="content">
         <div class="page active" id="homePage">
             <h1 class="page-title">Dashboard</h1>
             <p class="page-subtitle">Welcome to CloudSync Management System</p>
-            <div class="stats">
+            <div id="userKeyInfo" style="display: none;">
+                <div class="key-info-card">
+                    <div class="key-info-title">Your Access Key</div>
+                    <div class="key-display" id="userKeyDisplay"></div>
+                    <div class="time-label">Time Remaining</div>
+                    <div class="time-remaining" id="userTimeRemaining"></div>
+                    <div id="expiredMessage" class="expired-message" style="display: none;">
+                        <strong>Your key has expired!</strong><br>
+                        Please contact the administrator to extend your access.
+                    </div>
+                </div>
+            </div>
+            <div class="stats" id="adminStats">
                 <div class="stat"><h2 id="totalKeys">0</h2><p>Total Keys</p></div>
                 <div class="stat"><h2 id="activeKeys">0</h2><p>Active Keys</p></div>
                 <div class="stat"><h2 id="totalPlayers">0</h2><p>Total Players</p></div>
@@ -141,6 +161,7 @@
     <script>
         const API = window.location.origin;
         let userKey = null;
+        let isAdmin = false;
         let sidebarOpen = false;
 
         function toggleSidebar() {
@@ -169,12 +190,28 @@
                 const data = await res.json();
                 if (data.success) {
                     userKey = key;
+                    isAdmin = data.isAdmin || false;
                     sessionStorage.setItem('userKey', key);
+                    sessionStorage.setItem('isAdmin', isAdmin);
                     document.getElementById('authOverlay').style.display = 'none';
+                    
+                    if (isAdmin) {
+                        document.getElementById('userBadge').textContent = 'ADMIN';
+                        document.getElementById('userBadge').classList.add('admin');
+                        document.querySelectorAll('.admin-only').forEach(el => el.style.display = 'block');
+                        document.getElementById('adminStats').style.display = 'grid';
+                        document.getElementById('userKeyInfo').style.display = 'none';
+                    } else {
+                        document.getElementById('userBadge').textContent = 'USER';
+                        document.querySelectorAll('.admin-only').forEach(el => el.style.display = 'none');
+                        document.getElementById('adminStats').style.display = 'none';
+                        document.getElementById('userKeyInfo').style.display = 'block';
+                    }
+                    
                     loadData();
                     setInterval(loadData, 3000);
                 } else {
-                    alert('Invalid key or expired');
+                    alert(data.message || 'Invalid key or expired');
                 }
             } catch (e) {
                 alert('Connection error');
@@ -187,12 +224,26 @@
                 const res = await fetch(`${API}/api/dashboard?key=${userKey}`);
                 const data = await res.json();
                 
-                document.getElementById('totalKeys').textContent = data.totalKeys || 0;
-                document.getElementById('activeKeys').textContent = data.activeKeys || 0;
-                document.getElementById('totalPlayers').textContent = data.totalPlayers || 0;
+                if (isAdmin) {
+                    document.getElementById('totalKeys').textContent = data.totalKeys || 0;
+                    document.getElementById('activeKeys').textContent = data.activeKeys || 0;
+                    document.getElementById('totalPlayers').textContent = data.totalPlayers || 0;
+                    renderKeys(data.keys || []);
+                } else {
+                    document.getElementById('userKeyDisplay').textContent = userKey;
+                    const timeRemaining = data.keyTimeRemaining || 0;
+                    document.getElementById('userTimeRemaining').textContent = formatTime(timeRemaining);
+                    
+                    if (timeRemaining <= 0) {
+                        document.getElementById('expiredMessage').style.display = 'block';
+                        document.getElementById('userTimeRemaining').style.color = '#f00';
+                    } else {
+                        document.getElementById('expiredMessage').style.display = 'none';
+                        document.getElementById('userTimeRemaining').style.color = '#fff';
+                    }
+                }
                 
                 renderPlayers(data.players || []);
-                renderKeys(data.keys || []);
             } catch (e) {}
         }
 
@@ -295,10 +346,37 @@
             return num.toString();
         }
 
+        function formatTime(seconds) {
+            const days = Math.floor(seconds / 86400);
+            const hours = Math.floor((seconds % 86400) / 3600);
+            const mins = Math.floor((seconds % 3600) / 60);
+            const secs = Math.floor(seconds % 60);
+            if (days > 0) return `${days}d ${hours}h ${mins}m`;
+            else if (hours > 0) return `${hours}h ${mins}m ${secs}s`;
+            else if (mins > 0) return `${mins}m ${secs}s`;
+            else return `${secs}s`;
+        }
+
         const savedKey = sessionStorage.getItem('userKey');
+        const savedAdmin = sessionStorage.getItem('isAdmin') === 'true';
         if (savedKey) {
             userKey = savedKey;
+            isAdmin = savedAdmin;
             document.getElementById('authOverlay').style.display = 'none';
+            
+            if (isAdmin) {
+                document.getElementById('userBadge').textContent = 'ADMIN';
+                document.getElementById('userBadge').classList.add('admin');
+                document.querySelectorAll('.admin-only').forEach(el => el.style.display = 'block');
+                document.getElementById('adminStats').style.display = 'grid';
+                document.getElementById('userKeyInfo').style.display = 'none';
+            } else {
+                document.getElementById('userBadge').textContent = 'USER';
+                document.querySelectorAll('.admin-only').forEach(el => el.style.display = 'none');
+                document.getElementById('adminStats').style.display = 'none';
+                document.getElementById('userKeyInfo').style.display = 'block';
+            }
+            
             loadData();
             setInterval(loadData, 3000);
         }
