@@ -165,41 +165,49 @@ export default async function handler(req, res) {
 		const key = req.url.split('key=')[1]
 		if (!key) return res.status(401).json({ error: 'Unauthorized' })
 		
-		await checkKeyExpiry()
-		
 		const isAdmin = key === AUTH_KEY
 		
-		if (!isAdmin) {
-			const { data: keyData } = await supabase
-				.from('keys')
-				.select('*')
-				.eq('key', key)
-				.maybeSingle()
+		if (isAdmin) {
+			const { data: players } = await supabase.from('players').select('*')
+			const { data: allKeys } = await supabase.from('keys').select('*').order('created_at', { ascending: false })
 			
-			if (!keyData) {
-				return res.status(401).json({ error: 'Invalid key' })
-			}
+			const playersFormatted = (players || []).map(p => ({
+				username: p.username,
+				userId: p.user_id,
+				honey: p.honey || 0,
+				pollen: p.pollen || 0
+			}))
 			
-			if (keyData.status === 'expired') {
-				const { data: players } = await supabase
-					.from('players')
-					.select('*')
-					.eq('access_key', key)
-				
-				const playersFormatted = (players || []).map(p => ({
-					username: p.username,
-					userId: p.user_id,
-					honey: p.honey || 0,
-					pollen: p.pollen || 0
-				}))
-				
-				return res.json({
-					players: playersFormatted,
-					keyTimeRemaining: 0,
-					expired: true
-				})
-			}
+			const keysFormatted = (allKeys || []).map(k => ({
+				key: k.key,
+				status: k.status,
+				duration: k.duration,
+				usedBy: k.used_by,
+				expiresAt: k.expires_at
+			}))
 			
+			return res.json({
+				totalKeys: keysFormatted.length,
+				activeKeys: keysFormatted.filter(k => k.status === 'active').length,
+				totalPlayers: playersFormatted.length,
+				players: playersFormatted,
+				keys: keysFormatted
+			})
+		}
+		
+		await checkKeyExpiry()
+		
+		const { data: keyData } = await supabase
+			.from('keys')
+			.select('*')
+			.eq('key', key)
+			.maybeSingle()
+		
+		if (!keyData) {
+			return res.status(401).json({ error: 'Invalid key' })
+		}
+		
+		if (keyData.status === 'expired') {
 			const { data: players } = await supabase
 				.from('players')
 				.select('*')
@@ -212,17 +220,17 @@ export default async function handler(req, res) {
 				pollen: p.pollen || 0
 			}))
 			
-			const keyTimeRemaining = await calculateKeyTimeRemaining(keyData)
-			
 			return res.json({
 				players: playersFormatted,
-				keyTimeRemaining,
-				expired: false
+				keyTimeRemaining: 0,
+				expired: true
 			})
 		}
 		
-		const { data: players } = await supabase.from('players').select('*')
-		const { data: allKeys } = await supabase.from('keys').select('*').order('created_at', { ascending: false })
+		const { data: players } = await supabase
+			.from('players')
+			.select('*')
+			.eq('access_key', key)
 		
 		const playersFormatted = (players || []).map(p => ({
 			username: p.username,
@@ -231,20 +239,12 @@ export default async function handler(req, res) {
 			pollen: p.pollen || 0
 		}))
 		
-		const keysFormatted = (allKeys || []).map(k => ({
-			key: k.key,
-			status: k.status,
-			duration: k.duration,
-			usedBy: k.used_by,
-			expiresAt: k.expires_at
-		}))
+		const keyTimeRemaining = await calculateKeyTimeRemaining(keyData)
 		
 		return res.json({
-			totalKeys: keysFormatted.length,
-			activeKeys: keysFormatted.filter(k => k.status === 'active').length,
-			totalPlayers: playersFormatted.length,
 			players: playersFormatted,
-			keys: keysFormatted
+			keyTimeRemaining,
+			expired: false
 		})
 	}
 
