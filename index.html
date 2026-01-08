@@ -76,6 +76,7 @@
         .time-remaining { font-size: 32px; font-weight: 300; text-align: center; margin: 20px 0; }
         .time-label { font-size: 12px; color: #666; text-align: center; text-transform: uppercase; letter-spacing: 1px; }
         .expired-message { background: #f003; color: #f00; padding: 20px; border-radius: 6px; text-align: center; margin-top: 20px; }
+        .error-msg { background: #f003; color: #f00; padding: 15px; border-radius: 6px; margin: 20px 0; text-align: center; }
     </style>
 </head>
 <body>
@@ -85,6 +86,7 @@
             <p style="color: #666; font-size: 13px; margin-bottom: 20px;">Enter your admin password or user key</p>
             <input type="password" class="auth-input" id="authInput" placeholder="Enter password or key">
             <button class="btn" onclick="authenticate()">Access Dashboard</button>
+            <div id="authError" class="error-msg" style="display: none;"></div>
         </div>
     </div>
     <div class="topbar">
@@ -180,7 +182,15 @@
         }
 
         async function authenticate() {
-            const key = document.getElementById('authInput').value;
+            const key = document.getElementById('authInput').value.trim();
+            const errorDiv = document.getElementById('authError');
+            
+            if (!key) {
+                errorDiv.textContent = 'Please enter a key';
+                errorDiv.style.display = 'block';
+                return;
+            }
+            
             try {
                 const res = await fetch(`${API}/api/validate-key`, {
                     method: 'POST',
@@ -188,6 +198,7 @@
                     body: JSON.stringify({ key })
                 });
                 const data = await res.json();
+                
                 if (data.success) {
                     userKey = key;
                     isAdmin = data.isAdmin || false;
@@ -211,17 +222,27 @@
                     loadData();
                     setInterval(loadData, 3000);
                 } else {
-                    alert(data.message || 'Invalid key or expired');
+                    errorDiv.textContent = data.message || 'Invalid key or expired';
+                    errorDiv.style.display = 'block';
                 }
             } catch (e) {
-                alert('Connection error');
+                errorDiv.textContent = 'Connection error. Please try again.';
+                errorDiv.style.display = 'block';
             }
         }
 
         async function loadData() {
             if (!userKey) return;
             try {
-                const res = await fetch(`${API}/api/dashboard?key=${userKey}`);
+                const res = await fetch(`${API}/api/dashboard?key=${encodeURIComponent(userKey)}`);
+                
+                if (res.status === 401) {
+                    sessionStorage.clear();
+                    alert('Your session has expired. Please login again.');
+                    location.reload();
+                    return;
+                }
+                
                 const data = await res.json();
                 
                 if (isAdmin) {
@@ -234,7 +255,7 @@
                     const timeRemaining = data.keyTimeRemaining || 0;
                     document.getElementById('userTimeRemaining').textContent = formatTime(timeRemaining);
                     
-                    if (timeRemaining <= 0) {
+                    if (timeRemaining <= 0 || data.expired) {
                         document.getElementById('expiredMessage').style.display = 'block';
                         document.getElementById('userTimeRemaining').style.color = '#f00';
                     } else {
@@ -244,7 +265,9 @@
                 }
                 
                 renderPlayers(data.players || []);
-            } catch (e) {}
+            } catch (e) {
+                console.error('Error loading data:', e);
+            }
         }
 
         function renderPlayers(players) {
@@ -319,10 +342,13 @@
                 });
                 const data = await res.json();
                 if (data.success) {
+                    alert(`Key created: ${data.key}`);
                     closeCreateKeyModal();
                     loadData();
                 }
-            } catch (e) {}
+            } catch (e) {
+                alert('Error creating key');
+            }
         }
 
         async function addKeyTime(key) {
@@ -336,7 +362,9 @@
                     body: JSON.stringify({ adminKey: userKey, key, duration: parseInt(duration), unit })
                 });
                 loadData();
-            } catch (e) {}
+            } catch (e) {
+                alert('Error adding time');
+            }
         }
 
         function formatNumber(num) {
@@ -380,6 +408,12 @@
             loadData();
             setInterval(loadData, 3000);
         }
+
+        document.getElementById('authInput').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                authenticate();
+            }
+        });
     </script>
 </body>
 </html>
