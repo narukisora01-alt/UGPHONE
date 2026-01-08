@@ -175,7 +175,7 @@ export default async function handler(req, res) {
 	}
 
 	if (path === '/api/dashboard' && req.method === 'GET') {
-		const key = req.url.split('key=')[1]
+		const key = req.url.split('key=')[1]?.split('&')[0]
 		
 		if (!key) {
 			return res.status(401).json({ error: 'Unauthorized' })
