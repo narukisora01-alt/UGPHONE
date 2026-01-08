@@ -176,8 +176,28 @@ export default async function handler(req, res) {
 				.eq('key', key)
 				.maybeSingle()
 			
-			if (!keyData || keyData.status === 'expired') {
-				return res.status(401).json({ error: 'Invalid or expired key' })
+			if (!keyData) {
+				return res.status(401).json({ error: 'Invalid key' })
+			}
+			
+			if (keyData.status === 'expired') {
+				const { data: players } = await supabase
+					.from('players')
+					.select('*')
+					.eq('access_key', key)
+				
+				const playersFormatted = (players || []).map(p => ({
+					username: p.username,
+					userId: p.user_id,
+					honey: p.honey || 0,
+					pollen: p.pollen || 0
+				}))
+				
+				return res.json({
+					players: playersFormatted,
+					keyTimeRemaining: 0,
+					expired: true
+				})
 			}
 			
 			const { data: players } = await supabase
@@ -196,7 +216,8 @@ export default async function handler(req, res) {
 			
 			return res.json({
 				players: playersFormatted,
-				keyTimeRemaining
+				keyTimeRemaining,
+				expired: false
 			})
 		}
 		
