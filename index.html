@@ -4,11 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>CloudSync Dashboard</title>
-  
-  <!-- Favicon -->
   <link rel="icon" type="image/png" href="https://cdn.discordapp.com/attachments/1443913936033546415/1459190989750141039/8b1a2476-0f7f-4b53-9607-670b3dbc050b.png?ex=69626102&is=69610f82&hm=def76cd6c1f581e0fafd053497311d8ad70a3962c760d4dca61f71261469110e">
   <link rel="apple-touch-icon" href="https://cdn.discordapp.com/attachments/1443913936033546415/1459190989750141039/8b1a2476-0f7f-4b53-9607-670b3dbc050b.png?ex=69626102&is=69610f82&hm=def76cd6c1f581e0fafd053497311d8ad70a3962c760d4dca61f71261469110e">
-  
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
     @keyframes slideIn {
@@ -36,6 +33,7 @@
 
   <script>
     const API = 'https://cloudsync-rho.vercel.app';
+    const LOGO_URL = 'https://cdn.discordapp.com/attachments/1443913936033546415/1459190989750141039/8b1a2476-0f7f-4b53-9607-670b3dbc050b.png?ex=69626102&is=69610f82&hm=def76cd6c1f581e0fafd053497311d8ad70a3962c760d4dca61f71261469110e';
     
     const icons = {
       menu: '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>',
@@ -132,9 +130,7 @@
         const data = await res.json();
         state.dashboardData = data;
         updateDashboardOnly();
-      } catch (e) {
-        
-      }
+      } catch (e) {}
     }
 
     function logout() {
@@ -219,9 +215,7 @@
           <div class="w-full max-w-md">
             <div class="bg-gradient-to-br from-gray-900 to-black border border-gray-800 rounded-2xl p-8 shadow-2xl animate-in">
               <div class="flex justify-center mb-6">
-                <div class="bg-white rounded-full p-4">
-                  ${icons.key}
-                </div>
+                <img src="${LOGO_URL}" alt="CloudSync Logo" class="w-16 h-16 rounded-2xl">
               </div>
               <h1 class="text-3xl font-light text-white text-center mb-2">CloudSync</h1>
               <p class="text-gray-400 text-center text-sm mb-8">Enter your access key to continue</p>
