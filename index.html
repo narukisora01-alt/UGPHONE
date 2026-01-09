@@ -57,7 +57,6 @@
     };
 
     let intervalId = null;
-    let inputElements = {};
 
     function setState(updates) {
       state = { ...state, ...updates };
@@ -243,6 +242,11 @@
               >
                 ${state.loading ? 'Authenticating...' : 'Access Dashboard'}
               </button>
+              
+              <div class="mt-8 pt-6 border-t border-gray-800 text-center">
+                <p class="text-gray-500 text-xs">Made by <span class="text-white font-medium">shinz</span></p>
+                <p class="text-gray-600 text-xs mt-1">CloudSync © 2026</p>
+              </div>
             </div>
           </div>
         </div>
@@ -250,7 +254,7 @@
     }
 
     function Dashboard() {
-      const { currentPage, sidebarOpen, isAdmin, dashboardData, userKey } = state;
+      const { currentPage, sidebarOpen, isAdmin, userKey } = state;
       
       return `
         <div class="min-h-screen bg-black text-white">
@@ -371,7 +375,7 @@
     }
 
     function renderPlayersPage() {
-      const { dashboardData, isAdmin } = state;
+      const { dashboardData } = state;
       const players = dashboardData.players || [];
       
       return `
@@ -386,7 +390,7 @@
                 <h3 class="text-xl text-gray-400 mt-4">No players connected</h3>
               </div>
             ` : players.map((player, idx) => `
-              <div key="${idx}" class="bg-gradient-to-br from-gray-900 to-black border border-gray-800 rounded-2xl p-6 hover:border-gray-700 transition-all animate-in">
+              <div key="${idx}" class="bg-gradient-to-br from-gray-900 to-black border border-gray-800 rounded-2xl p-6 hover:border-gray-700 transition-all animate-in h-fit">
                 <div class="flex items-center gap-4 mb-6">
                   <div class="bg-white rounded-full w-12 h-12 flex items-center justify-center text-black font-semibold text-lg">
                     ${player.username[0].toUpperCase()}
@@ -397,7 +401,7 @@
                   </div>
                 </div>
 
-                <div class="grid grid-cols-2 gap-3 mb-4">
+                <div class="grid grid-cols-2 gap-3${player.status === 'disconnected' && player.errorMsg ? ' mb-4' : ''}">
                   <div class="bg-gray-900/50 rounded-lg p-3">
                     <div class="text-xs text-gray-400 mb-1">HONEY</div>
                     <div class="text-lg font-medium">${formatNumber(player.honey || 0)}</div>
@@ -408,7 +412,7 @@
                   </div>
                 </div>
 
-                ${player.status === 'disconnected' && player.errorMsg && isAdmin ? `
+                ${player.status === 'disconnected' && player.errorMsg ? `
                   <div class="mb-4 bg-red-500/10 border border-red-500/50 rounded-lg p-3">
                     <p class="text-red-400 text-xs">${player.errorMsg}</p>
                   </div>
