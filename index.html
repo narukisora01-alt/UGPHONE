@@ -39,7 +39,8 @@
       users: '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/></svg>',
       clock: '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>',
       activity: '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>',
-      trendingUp: '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/></svg>'
+      trendingUp: '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/></svg>',
+      refresh: '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>'
     };
 
     let state = {
@@ -51,10 +52,12 @@
       authInput: '',
       authError: '',
       dashboardData: {},
-      loading: false
+      loading: false,
+      rendering: false
     };
 
     let intervalId = null;
+    let inputElements = {};
 
     function setState(updates) {
       state = { ...state, ...updates };
@@ -115,7 +118,7 @@
     }
 
     async function loadData() {
-      if (!state.userKey) return;
+      if (!state.userKey || state.rendering) return;
       try {
         const res = await fetch(`${API}/api/dashboard?key=${encodeURIComponent(state.userKey)}`);
         if (res.status === 401) {
@@ -123,7 +126,8 @@
           return;
         }
         const data = await res.json();
-        setState({ dashboardData: data });
+        state.dashboardData = data;
+        updateDashboardOnly();
       } catch (e) {
         
       }
@@ -167,6 +171,23 @@
         loadData();
       } catch (e) {
         alert('Error adding time');
+      }
+    }
+
+    async function rejoinPlayer(userId) {
+      try {
+        const res = await fetch(`${API}/api/rejoin`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId })
+        });
+        const data = await res.json();
+        if (data.success) {
+          alert('Rejoin signal sent!');
+          loadData();
+        }
+      } catch (e) {
+        alert('Error sending rejoin signal');
       }
     }
 
@@ -275,7 +296,7 @@
           </aside>
 
           <main class="pt-16 transition-all duration-300 ${sidebarOpen ? 'ml-64' : 'ml-0'}">
-            <div class="p-8">
+            <div class="p-8" id="dashboardContent">
               ${currentPage === 'home' ? renderHomePage() : ''}
               ${currentPage === 'players' ? renderPlayersPage() : ''}
               ${currentPage === 'keys' && isAdmin ? renderKeysPage() : ''}
@@ -350,7 +371,7 @@
     }
 
     function renderPlayersPage() {
-      const { dashboardData } = state;
+      const { dashboardData, isAdmin } = state;
       const players = dashboardData.players || [];
       
       return `
@@ -376,7 +397,7 @@
                   </div>
                 </div>
 
-                <div class="grid grid-cols-2 gap-3">
+                <div class="grid grid-cols-2 gap-3 mb-4">
                   <div class="bg-gray-900/50 rounded-lg p-3">
                     <div class="text-xs text-gray-400 mb-1">HONEY</div>
                     <div class="text-lg font-medium">${formatNumber(player.honey || 0)}</div>
@@ -387,10 +408,14 @@
                   </div>
                 </div>
 
-                ${player.status === 'disconnected' && player.errorMsg ? `
-                  <div class="mt-4 bg-red-500/10 border border-red-500/50 rounded-lg p-3">
+                ${player.status === 'disconnected' && player.errorMsg && isAdmin ? `
+                  <div class="mb-4 bg-red-500/10 border border-red-500/50 rounded-lg p-3">
                     <p class="text-red-400 text-xs">${player.errorMsg}</p>
                   </div>
+                  <button class="rejoin-btn w-full bg-blue-500/20 text-blue-400 py-2 rounded-lg text-sm font-medium hover:bg-blue-500/30 transition-colors flex items-center justify-center gap-2" data-userid="${player.userId}">
+                    ${icons.refresh}
+                    <span>Rejoin Player</span>
+                  </button>
                 ` : ''}
               </div>
             `).join('')}
@@ -454,10 +479,62 @@
       `;
     }
 
+    function updateDashboardOnly() {
+      const content = document.getElementById('dashboardContent');
+      if (!content) return;
+      
+      const { currentPage, isAdmin } = state;
+      let newHTML = '';
+      
+      if (currentPage === 'home') newHTML = renderHomePage();
+      else if (currentPage === 'players') newHTML = renderPlayersPage();
+      else if (currentPage === 'keys' && isAdmin) newHTML = renderKeysPage();
+      
+      content.innerHTML = newHTML;
+      attachContentListeners();
+    }
+
     function render() {
+      if (state.rendering) return;
+      state.rendering = true;
+      
       const app = document.getElementById('app');
       app.innerHTML = state.authenticated ? Dashboard() : LoginPage();
       attachEventListeners();
+      
+      state.rendering = false;
+    }
+
+    function attachContentListeners() {
+      const createKeyBtn = document.getElementById('createKeyBtn');
+      const addTimeBtns = document.querySelectorAll('.add-time-btn');
+      const rejoinBtns = document.querySelectorAll('.rejoin-btn');
+      
+      if (createKeyBtn) {
+        createKeyBtn.addEventListener('click', () => {
+          const duration = prompt('Enter duration:');
+          const unit = prompt('Enter unit (minutes/hours/days):');
+          if (duration && unit) createKey(duration, unit);
+        });
+      }
+      
+      addTimeBtns.forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          const key = e.currentTarget.dataset.key;
+          const duration = prompt('Enter time to add:');
+          const unit = prompt('Enter unit (minutes/hours/days):');
+          if (duration && unit) addKeyTime(key, duration, unit);
+        });
+      });
+
+      rejoinBtns.forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          const userId = e.currentTarget.dataset.userid;
+          if (confirm('Send rejoin signal to this player?')) {
+            rejoinPlayer(userId);
+          }
+        });
+      });
     }
 
     function attachEventListeners() {
@@ -467,7 +544,7 @@
         
         if (authInput) {
           authInput.addEventListener('input', (e) => {
-            setState({ authInput: e.target.value });
+            state.authInput = e.target.value;
           });
           authInput.addEventListener('keypress', (e) => {
             if (e.key === 'Enter') authenticate();
@@ -481,8 +558,6 @@
         const toggleSidebar = document.getElementById('toggleSidebar');
         const logoutBtn = document.getElementById('logoutBtn');
         const navBtns = document.querySelectorAll('.nav-btn');
-        const createKeyBtn = document.getElementById('createKeyBtn');
-        const addTimeBtns = document.querySelectorAll('.add-time-btn');
         
         if (toggleSidebar) {
           toggleSidebar.addEventListener('click', () => {
@@ -500,23 +575,8 @@
             setState({ currentPage: page });
           });
         });
-        
-        if (createKeyBtn) {
-          createKeyBtn.addEventListener('click', () => {
-            const duration = prompt('Enter duration:');
-            const unit = prompt('Enter unit (minutes/hours/days):');
-            if (duration && unit) createKey(duration, unit);
-          });
-        }
-        
-        addTimeBtns.forEach(btn => {
-          btn.addEventListener('click', (e) => {
-            const key = e.currentTarget.dataset.key;
-            const duration = prompt('Enter time to add:');
-            const unit = prompt('Enter unit (minutes/hours/days):');
-            if (duration && unit) addKeyTime(key, duration, unit);
-          });
-        });
+
+        attachContentListeners();
       }
     }
 
